@@ -62,3 +62,21 @@ func TestConvertToRequestPayloadPreservesUsePersonCharacter(t *testing.T) {
 		t.Fatalf("UsePersonCharacter = %v, want true", body.UsePersonCharacter)
 	}
 }
+
+func TestConvertToRequestPayloadPreservesOmniReferenceTaskType(t *testing.T) {
+	req := relaycommon.TaskSubmitReq{
+		Model:  "doubao-seedance-2-0-mini-260615",
+		Prompt: "他们在跳舞",
+		Metadata: map[string]interface{}{
+			"omni_reference_task_type": "auto",
+		},
+	}
+
+	body, err := (&TaskAdaptor{}).convertToRequestPayload(&req)
+	if err != nil {
+		t.Fatalf("convertToRequestPayload() error = %v", err)
+	}
+	if body.OmniReferenceTaskType != "auto" {
+		t.Fatalf("OmniReferenceTaskType = %q, want auto", body.OmniReferenceTaskType)
+	}
+}
