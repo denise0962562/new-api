@@ -2,6 +2,8 @@ package model
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -58,4 +60,69 @@ func RecordTaskChannelSuccess(channelID int, modelName string) {
 	taskChannelHealth.Lock()
 	delete(taskChannelHealth.states, key)
 	taskChannelHealth.Unlock()
+}
+
+type TaskChannelHealth struct {
+	ChannelID           int    `json:"channel_id"`
+	ModelName           string `json:"model_name"`
+	ConsecutiveFailures int    `json:"consecutive_failures"`
+	LastFailureAt       int64  `json:"last_failure_at,omitempty"`
+}
+
+func ResetTaskChannelHealth(channelID int, modelName string) {
+	taskChannelHealth.Lock()
+	delete(taskChannelHealth.states, taskChannelHealthKey(channelID, modelName))
+	taskChannelHealth.Unlock()
+}
+
+func ResetTaskChannelHealthByModel(modelName string) {
+	taskChannelHealth.Lock()
+	for key := range taskChannelHealth.states {
+		if strings.HasSuffix(key, "\x00"+modelName) {
+			delete(taskChannelHealth.states, key)
+		}
+	}
+	taskChannelHealth.Unlock()
+}
+
+func ListTaskChannelHealth(channelID int, channelModels string) []TaskChannelHealth {
+	models := make(map[string]struct{})
+	for _, modelName := range strings.Split(channelModels, ",") {
+		modelName = strings.TrimSpace(modelName)
+		if modelName != "" {
+			models[modelName] = struct{}{}
+		}
+	}
+	taskChannelHealth.RLock()
+	stateKeys := make([]string, 0, len(taskChannelHealth.states))
+	for key := range taskChannelHealth.states {
+		stateKeys = append(stateKeys, key)
+	}
+	taskChannelHealth.RUnlock()
+	for _, key := range stateKeys {
+		prefix := fmt.Sprintf("%d\x00", channelID)
+		if strings.HasPrefix(key, prefix) {
+			models[strings.TrimPrefix(key, prefix)] = struct{}{}
+		}
+	}
+	result := make([]TaskChannelHealth, 0, len(models))
+	for modelName := range models {
+		state := TaskChannelHealth{ChannelID: channelID, ModelName: modelName}
+		key := taskChannelHealthKey(channelID, modelName)
+		taskChannelHealth.RLock()
+		value, ok := taskChannelHealth.states[key]
+		taskChannelHealth.RUnlock()
+		if ok && time.Since(value.LastFailureAt) < taskFailureHealthResetWindow {
+			state.ConsecutiveFailures = value.Failures
+			state.LastFailureAt = value.LastFailureAt.Unix()
+		}
+		result = append(result, state)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ConsecutiveFailures != result[j].ConsecutiveFailures {
+			return result[i].ConsecutiveFailures > result[j].ConsecutiveFailures
+		}
+		return result[i].ModelName < result[j].ModelName
+	})
+	return result
 }

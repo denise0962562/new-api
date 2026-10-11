@@ -111,6 +111,7 @@ func UpdateModelMeta(c *gin.Context) {
 	statusOnly := c.Query("status_only") == "true"
 
 	var m model.Model
+	var previous model.Model
 	if err := c.ShouldBindJSON(&m); err != nil {
 		common.ApiError(c, err)
 		return
@@ -118,6 +119,9 @@ func UpdateModelMeta(c *gin.Context) {
 	if m.Id == 0 {
 		common.ApiErrorMsg(c, "缺少模型 ID")
 		return
+	}
+	if !statusOnly {
+		_ = model.DB.Select("id", "model_name", "task_failure_fallback_enabled").First(&previous, m.Id).Error
 	}
 
 	if statusOnly {
@@ -139,6 +143,10 @@ func UpdateModelMeta(c *gin.Context) {
 		if err := m.Update(); err != nil {
 			common.ApiError(c, err)
 			return
+		}
+		if previous.ModelName != "" && (previous.ModelName != m.ModelName || previous.TaskFailureFallbackEnabled != m.TaskFailureFallbackEnabled) {
+			model.ResetTaskChannelHealthByModel(previous.ModelName)
+			model.ResetTaskChannelHealthByModel(m.ModelName)
 		}
 		model.InitChannelCache()
 	}

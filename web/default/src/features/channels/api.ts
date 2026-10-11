@@ -27,6 +27,7 @@ import type {
   ChannelBalanceResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
+  ChannelTaskHealthResponse,
   CopyChannelParams,
   CopyChannelResponse,
   FetchModelsResponse,
@@ -39,6 +40,23 @@ import type {
   SearchChannelsResponse,
   TagOperationParams,
 } from './types'
+
+export async function getChannelTaskHealth(
+  id: number
+): Promise<ChannelTaskHealthResponse> {
+  const res = await api.get(`/api/channel/${id}/task-health`)
+  return res.data
+}
+
+export async function resetChannelTaskHealth(
+  id: number,
+  modelName: string
+): Promise<{ success: boolean; message?: string }> {
+  const res = await api.post(`/api/channel/${id}/task-health/reset`, {
+    model_name: modelName,
+  })
+  return res.data
+}
 
 const channelActionConfig = (
   config: ApiRequestConfig = {}

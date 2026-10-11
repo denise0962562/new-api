@@ -75,6 +75,23 @@ export const channelSchema = z.object({
 
 export type Channel = z.infer<typeof channelSchema>
 
+export interface ChannelTaskHealthItem {
+  channel_id: number
+  model_name: string
+  consecutive_failures: number
+  last_failure_at?: number
+}
+
+export interface ChannelTaskHealthResponse {
+  success: boolean
+  data?: {
+    channel_id: number
+    channel_name: string
+    items: ChannelTaskHealthItem[]
+  }
+  message?: string
+}
+
 // ============================================================================
 // Channel Settings Types
 // ============================================================================

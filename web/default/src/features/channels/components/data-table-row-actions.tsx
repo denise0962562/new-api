@@ -33,6 +33,7 @@ import {
   Trash2,
   RefreshCw,
   Loader2,
+  Activity,
 } from 'lucide-react'
 import { useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -143,6 +144,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     setOpen('multi-key-manage')
   }
 
+  const handleTaskHealth = () => {
+    setCurrentRow(channel)
+    setOpen('task-health')
+  }
+
   const handleToggleStatus = async (
     e?: React.MouseEvent<HTMLButtonElement>
   ) => {
@@ -251,6 +257,27 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </TooltipContent>
       </Tooltip>
 
+      {layout === 'card' && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='ghost'
+                size='icon-sm'
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleTaskHealth()
+                }}
+                aria-label={t('Task Failure Details')}
+              />
+            }
+          >
+            <Activity className='size-4' />
+          </TooltipTrigger>
+          <TooltipContent>{t('Task Failure Details')}</TooltipContent>
+        </Tooltip>
+      )}
+
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -278,6 +305,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             {t('Test Connection')}
             <DropdownMenuShortcut>
               <PlugZap size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
+          <DropdownMenuItem onClick={handleTaskHealth}>
+            {t('Task Failure Details')}
+            <DropdownMenuShortcut>
+              <Activity size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
 
