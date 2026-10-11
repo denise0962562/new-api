@@ -21,6 +21,7 @@ const (
 	SystemTaskTypeModelUpdate    = "model_update"
 	SystemTaskTypeMidjourneyPoll = "midjourney_poll"
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
+	SystemTaskTypeUsageExport    = "usage_export"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
@@ -411,6 +412,10 @@ func (task *SystemTask) DecodePayload(v any) error {
 
 func (task *SystemTask) DecodeState(v any) error {
 	return decodeSystemTaskJSONString(task.State, v)
+}
+
+func (task *SystemTask) DecodeResult(v any) error {
+	return decodeSystemTaskJSONString(task.Result, v)
 }
 
 func (task *SystemTask) ToResponse() SystemTaskResponse {

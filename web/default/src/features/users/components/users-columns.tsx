@@ -251,6 +251,19 @@ export function useUsersColumns(): ColumnDef<User>[] {
       size: 140,
     },
     {
+      accessorKey: 'usage_export_enabled',
+      header: '消费导出',
+      cell: ({ row }) => (
+        <StatusBadge
+          label={row.original.usage_export_enabled ? '已开启' : '未开启'}
+          variant={row.original.usage_export_enabled ? 'success' : 'neutral'}
+          copyable={false}
+        />
+      ),
+      enableSorting: false,
+      size: 110,
+    },
+    {
       accessorKey: 'group',
       header: t('Group'),
       cell: ({ row }) => {

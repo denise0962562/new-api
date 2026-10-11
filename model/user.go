@@ -53,6 +53,7 @@ type User struct {
 	CreatedAt        int64                      `json:"created_at" gorm:"autoCreateTime;column:created_at"`
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	InvoiceEnabled   bool                       `json:"invoice_enabled" gorm:"column:invoice_enabled"`
+	UsageExportEnabled bool                      `json:"usage_export_enabled" gorm:"column:usage_export_enabled"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 	RestrictedPublicGroups []string            `json:"restricted_public_groups,omitempty" gorm:"-:all"`
 }
@@ -606,6 +607,7 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 		"group":        newUser.Group,
 		"remark":       newUser.Remark,
 		"invoice_enabled": newUser.InvoiceEnabled,
+		"usage_export_enabled": newUser.UsageExportEnabled,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

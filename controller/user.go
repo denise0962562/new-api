@@ -154,6 +154,7 @@ func setupLogin(user *model.User, c *gin.Context) {
 			"role":         user.Role,
 			"status":       user.Status,
 			"group":        user.Group,
+			"usage_export_enabled": user.UsageExportEnabled,
 		},
 	})
 }
@@ -495,6 +496,7 @@ func GetSelf(c *gin.Context) {
 		"stripe_customer":   user.StripeCustomer,
 		"sidebar_modules":   userSetting.SidebarModules, // 正确提取sidebar_modules字段
 		"permissions":       permissions,                // 新增权限字段
+		"usage_export_enabled": user.UsageExportEnabled,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -831,6 +833,7 @@ func UpdateSelf(c *gin.Context) {
 		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.DisplayName,
+		UsageExportEnabled: user.UsageExportEnabled,
 	}
 	if user.Password == "$I_LOVE_U" {
 		user.Password = "" // rollback to what it should be

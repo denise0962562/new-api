@@ -60,9 +60,11 @@ export const userSchema = z.object({
   DeletedAt: z.any().nullable().optional(),
   remark: z.string().optional(),
   invoice_enabled: z.boolean().optional(),
+  usage_export_enabled: z.boolean().optional(),
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
+  restricted_public_groups: z.array(z.string()).optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -114,6 +116,7 @@ export interface UserFormData {
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
   invoice_enabled?: boolean
+  usage_export_enabled?: boolean
   admin_permissions?: AdminPermissionMatrix
   restricted_public_groups?: string[]
 }

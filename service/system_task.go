@@ -120,6 +120,10 @@ func notifySystemTaskRunner() {
 	}
 }
 
+// NotifyUsageExportRunner wakes the shared system-task runner after an export
+// task is enqueued.
+func NotifyUsageExportRunner() { notifySystemTaskRunner() }
+
 func StartSystemTaskRunner() {
 	systemTaskRunnerOnce.Do(func() {
 		if !common.IsMasterNode {

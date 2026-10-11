@@ -488,6 +488,26 @@ export function UsersMutateDrawer({
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name='usage_export_enabled'
+                    render={({ field }) => (
+                      <FormItem className='flex items-center justify-between gap-4 rounded-md border p-3'>
+                        <div>
+                          <FormLabel>消费记录导出</FormLabel>
+                          <FormDescription>
+                            允许该用户导出最终成功的消费记录，每日最多 5 次，单次最多 31 天。
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value === true}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </SideDrawerSection>
               )}
 
