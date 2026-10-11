@@ -84,6 +84,11 @@ func buildUsageExport(ctx context.Context, p UsageExportPayload) (UsageExportRes
 	for _, l := range logs {
 		if err := ctx.Err(); err != nil { return UsageExportResult{}, err }
 		var other map[string]any; _ = json.Unmarshal([]byte(l.Other), &other)
+		// Async task reservation logs are marked by LogTaskConsumption with
+		// Other.is_task=true. They do not carry task_id at submission time, so
+		// filtering only on task_id incorrectly leaked the reservation as a
+		// second "sync" export row.
+		if isTask, ok := other["is_task"].(bool); ok && isTask { continue }
 		key := l.RequestId
 		if key == "" { key = fmt.Sprintf("log:%d", l.Id) }
 		if v, ok := other["task_id"].(string); ok && v != "" { continue }
