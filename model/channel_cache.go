@@ -21,6 +21,7 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
+var taskFailureFallbackModels map[string]bool
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -29,6 +30,7 @@ func InitChannelCache() {
 	}
 	newChannelId2channel := make(map[int]*Channel)
 	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
+	newTaskFailureFallbackModels := make(map[string]bool)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
@@ -41,6 +43,11 @@ func InitChannelCache() {
 	}
 	var abilities []*Ability
 	DB.Find(&abilities)
+	var modelConfigs []Model
+	DB.Select("model_name", "task_failure_fallback_enabled").Find(&modelConfigs)
+	for _, modelConfig := range modelConfigs {
+		newTaskFailureFallbackModels[modelConfig.ModelName] = modelConfig.TaskFailureFallbackEnabled
+	}
 	groups := make(map[string]bool)
 	for _, ability := range abilities {
 		groups[ability.Group] = true
@@ -93,8 +100,22 @@ func InitChannelCache() {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	taskFailureFallbackModels = newTaskFailureFallbackModels
 	channelSyncLock.Unlock()
 	common.SysLog("channels synced from database")
+}
+
+func IsTaskFailureFallbackEnabled(modelName string) bool {
+	if !common.MemoryCacheEnabled {
+		var modelConfig Model
+		if DB.Select("task_failure_fallback_enabled").Where("model_name = ?", modelName).First(&modelConfig).Error != nil {
+			return false
+		}
+		return modelConfig.TaskFailureFallbackEnabled
+	}
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	return taskFailureFallbackModels[modelName]
 }
 
 func SyncChannelCache(frequency int) {
@@ -106,6 +127,7 @@ func SyncChannelCache(frequency int) {
 }
 
 func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath string) (*Channel, error) {
+	fallbackEnabled := IsTaskFailureFallbackEnabled(model)
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
 		return GetChannel(group, model, retry, requestPath)
@@ -169,6 +191,26 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 
 	if len(targetChannels) == 0 {
 		return nil, errors.New(fmt.Sprintf("no channel found, group: %s, model: %s, priority: %d", group, model, targetPriority))
+	}
+	if fallbackEnabled {
+		minFailures := -1
+		for _, channel := range targetChannels {
+			failures := GetTaskChannelConsecutiveFailures(channel.Id, model)
+			if minFailures < 0 || failures < minFailures {
+				minFailures = failures
+			}
+		}
+		filtered := make([]*Channel, 0, len(targetChannels))
+		for _, channel := range targetChannels {
+			if GetTaskChannelConsecutiveFailures(channel.Id, model) == minFailures {
+				filtered = append(filtered, channel)
+			}
+		}
+		targetChannels = filtered
+		sumWeight = 0
+		for _, channel := range targetChannels {
+			sumWeight += channel.GetWeight()
+		}
 	}
 
 	// smoothing factor and adjustment

@@ -278,6 +278,7 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 			continue
 		}
 
+		previousStatus := task.Status
 		task.Status = lo.If(model.TaskStatus(responseItem.Status) != "", model.TaskStatus(responseItem.Status)).Else(task.Status)
 		task.FailReason = lo.If(responseItem.FailReason != "", responseItem.FailReason).Else(task.FailReason)
 		task.SubmitTime = lo.If(responseItem.SubmitTime != 0, responseItem.SubmitTime).Else(task.SubmitTime)
@@ -292,10 +293,15 @@ func updateSunoTasks(ctx context.Context, channelId int, taskIds []string, taskM
 			task.Progress = "100%"
 		}
 		task.Data = responseItem.Data
-
 		err = task.Update()
 		if err != nil {
 			common.SysLog("UpdateSunoTask task error: " + err.Error())
+		} else if model.IsTaskFailureFallbackEnabled(task.ModelName) && previousStatus != task.Status {
+			if task.Status == model.TaskStatusFailure {
+				model.RecordTaskChannelFailure(task.ChannelId, task.ModelName)
+			} else if task.Status == model.TaskStatusSuccess {
+				model.RecordTaskChannelSuccess(task.ChannelId, task.ModelName)
+			}
 		}
 	}
 	return nil
@@ -561,7 +567,6 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 	if taskResult.Progress != "" {
 		task.Progress = taskResult.Progress
 	}
-
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 	if isDone && snap.Status != task.Status {
 		won, err := task.UpdateWithStatus(snap.Status)
@@ -573,6 +578,12 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 			logger.LogWarn(ctx, fmt.Sprintf("Task %s already transitioned by another process, skip billing", task.TaskID))
 			shouldRefund = false
 			shouldSettle = false
+		} else if model.IsTaskFailureFallbackEnabled(task.ModelName) {
+			if task.Status == model.TaskStatusFailure {
+				model.RecordTaskChannelFailure(task.ChannelId, task.ModelName)
+			} else if task.Status == model.TaskStatusSuccess {
+				model.RecordTaskChannelSuccess(task.ChannelId, task.ModelName)
+			}
 		}
 	} else if !snap.Equal(task.Snapshot()) {
 		if _, err := task.UpdateWithStatus(snap.Status); err != nil {

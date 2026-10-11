@@ -34,6 +34,7 @@ type Model struct {
 	SyncOfficial            int            `json:"sync_official" gorm:"default:1"`
 	Recommended             int            `json:"recommended" gorm:"default:0;index"`
 	IsVideoModel            int            `json:"is_video_model" gorm:"default:0;index"`
+	TaskFailureFallbackEnabled bool         `json:"task_failure_fallback_enabled" gorm:"default:false;index"`
 	RequestPriceUnits       int            `json:"request_price_units,omitempty" gorm:"default:1"`
 	RequestPriceDisplayUnit string         `json:"request_price_display_unit,omitempty" gorm:"type:varchar(16);default:'request'"`
 	CreatedTime             int64          `json:"created_time" gorm:"bigint"`
@@ -97,7 +98,7 @@ func (mi *Model) Update() error {
 	}
 	// 使用 Select 强制更新所有字段，包括零值
 	return DB.Model(&Model{}).Where("id = ?", mi.Id).
-		Select("model_name", "description", "description_en", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "recommended", "is_video_model", "request_price_units", "request_price_display_unit", "name_rule", "updated_time").
+		Select("model_name", "description", "description_en", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "recommended", "is_video_model", "task_failure_fallback_enabled", "request_price_units", "request_price_display_unit", "name_rule", "updated_time").
 		Updates(mi).Error
 }
 

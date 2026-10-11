@@ -101,6 +101,7 @@ func CreateModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	model.InitChannelCache()
 	model.RefreshPricing()
 	common.ApiSuccess(c, &m)
 }
@@ -139,6 +140,7 @@ func UpdateModelMeta(c *gin.Context) {
 			common.ApiError(c, err)
 			return
 		}
+		model.InitChannelCache()
 	}
 	model.RefreshPricing()
 	common.ApiSuccess(c, &m)

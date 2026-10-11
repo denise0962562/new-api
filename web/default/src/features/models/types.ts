@@ -47,6 +47,7 @@ export interface Model {
   sync_official: number
   recommended?: number
   is_video_model?: number
+  task_failure_fallback_enabled?: boolean
   request_price_units?: number
   request_price_display_unit?: 'request' | 'second'
   quota_type?: number
@@ -285,6 +286,7 @@ export const modelFormSchema = z.object({
   sync_official: z.boolean().default(true),
   recommended: z.boolean().default(false),
   is_video_model: z.boolean().default(false),
+  task_failure_fallback_enabled: z.boolean().default(false),
 })
 
 export type ModelFormValues = z.infer<typeof modelFormSchema>

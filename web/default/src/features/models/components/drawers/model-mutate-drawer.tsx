@@ -102,6 +102,7 @@ const extendedModelFormSchema = z.object({
   sync_official: z.boolean(),
   recommended: z.boolean(),
   is_video_model: z.boolean(),
+  task_failure_fallback_enabled: z.boolean(),
   request_price_units: z.string().optional(),
   request_price_display_unit: z.enum(['request', 'second']).optional(),
   price: z.string().optional(),
@@ -260,6 +261,7 @@ export function ModelMutateDrawer({
       sync_official: true,
       recommended: false,
       is_video_model: false,
+      task_failure_fallback_enabled: false,
       request_price_units: '1',
       request_price_display_unit: 'request',
       price: '',
@@ -333,6 +335,7 @@ export function ModelMutateDrawer({
         sync_official: model.sync_official === 1,
         recommended: model.recommended === 1,
         is_video_model: model.is_video_model === 1,
+        task_failure_fallback_enabled: Boolean(model.task_failure_fallback_enabled),
         request_price_units: String(model.request_price_units || 1),
         request_price_display_unit:
           model.request_price_display_unit === 'second' ? 'second' : 'request',
@@ -473,6 +476,7 @@ export function ModelMutateDrawer({
         sync_official: true,
         recommended: false,
         is_video_model: false,
+        task_failure_fallback_enabled: false,
         request_price_units: String(currentRow?.request_price_units || 1),
         request_price_display_unit:
           currentRow?.request_price_display_unit === 'second'
@@ -513,6 +517,7 @@ export function ModelMutateDrawer({
           sync_official: values.sync_official ? 1 : 0,
           recommended: values.recommended ? 1 : 0,
           is_video_model: values.is_video_model ? 1 : 0,
+          task_failure_fallback_enabled: values.task_failure_fallback_enabled,
           request_price_units: Math.max(
             1,
             Number.parseInt(values.request_price_units || '1', 10) || 1
@@ -1670,6 +1675,31 @@ export function ModelMutateDrawer({
                       <FormDescription>
                         {t(
                           'Mark as video model. It will appear in Video Model Marketplace instead of General Model Marketplace.'
+                        )}
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='task_failure_fallback_enabled'
+                render={({ field }) => (
+                  <FormItem className={sideDrawerSwitchItemClassName()}>
+                    <div className='flex flex-col gap-0.5'>
+                      <FormLabel className='text-base'>
+                        {t('Task Failure Adaptive Routing')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Prefer channels with fewer recent final asynchronous task failures before applying channel weights.'
                         )}
                       </FormDescription>
                     </div>

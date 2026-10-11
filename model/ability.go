@@ -122,6 +122,22 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
+	if IsTaskFailureFallbackEnabled(model) && len(abilities) > 0 {
+		minFailures := -1
+		for _, ability := range abilities {
+			failures := GetTaskChannelConsecutiveFailures(ability.ChannelId, model)
+			if minFailures < 0 || failures < minFailures {
+				minFailures = failures
+			}
+		}
+		filtered := make([]Ability, 0, len(abilities))
+		for _, ability := range abilities {
+			if GetTaskChannelConsecutiveFailures(ability.ChannelId, model) == minFailures {
+				filtered = append(filtered, ability)
+			}
+		}
+		abilities = filtered
+	}
 	channel := Channel{}
 	if len(abilities) > 0 {
 		// Randomly choose one
