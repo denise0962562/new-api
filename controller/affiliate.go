@@ -78,9 +78,7 @@ func GetAffiliateUsers(c *gin.Context) {
 func GetAffiliateGroups(c *gin.Context) {
 	u, err := model.GetUserById(c.GetInt("id"), false)
 	if err != nil { common.ApiError(c, err); return }
-	usable := service.GetUserUsableGroupsWithRestrictions(u.Group, u.GetSetting().RestrictedPublicGroups)
-	groups := make([]string, 0, len(usable))
-	for group := range usable { groups = append(groups, group) }
+	groups := service.SplitUserGroups(u.Group)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": groups})
 }
 
@@ -97,6 +95,21 @@ func GetAffiliateConsumption(c *gin.Context) {
 		"quota": u.Quota, "used_quota": u.UsedQuota, "total_quota": u.Quota + u.UsedQuota,
 		"request_count": u.RequestCount,
 	}})
+}
+
+func GetAffiliateConsumptionData(c *gin.Context) {
+	id, ok := parseAffiliateTarget(c)
+	if !ok {
+		return
+	}
+	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
+	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	dates, err := model.GetQuotaDataByUserId(id, startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": dates})
 }
 
 type affiliateTransferRequest struct { Quota int `json:"quota" binding:"required,gt=0"` }
@@ -127,9 +140,10 @@ func AddAffiliateGroups(c *gin.Context) {
 	var req affiliateGroupsRequest
 	if err := c.ShouldBindJSON(&req); err != nil { common.ApiErrorMsg(c, "groups must not be empty"); return }
 	operator, err := model.GetUserById(c.GetInt("id"), false); if err != nil { common.ApiError(c, err); return }
-	usable := service.GetUserUsableGroupsWithRestrictions(operator.Group, operator.GetSetting().RestrictedPublicGroups)
+	assignable := map[string]bool{}
+	for _, group := range service.SplitUserGroups(operator.Group) { assignable[group] = true }
 	requested := make([]string, 0, len(req.Groups)); seen := map[string]bool{}
-	for _, g := range req.Groups { g = strings.TrimSpace(g); if g == "" || seen[g] { continue }; seen[g] = true; if _, exists := usable[g]; !exists { common.ApiErrorMsg(c, "group is not assignable by you"); return }; requested = append(requested, g) }
+	for _, g := range req.Groups { g = strings.TrimSpace(g); if g == "" || seen[g] { continue }; seen[g] = true; if !assignable[g] { common.ApiErrorMsg(c, "group is not assignable by you"); return }; requested = append(requested, g) }
 	if len(requested) == 0 { common.ApiErrorMsg(c, "groups must not be empty"); return }
 	var target model.User
 	if err := model.DB.First(&target, "id = ? AND inviter_id = ? AND deleted_at IS NULL", id, operator.Id).Error; err != nil { common.ApiError(c, err); return }

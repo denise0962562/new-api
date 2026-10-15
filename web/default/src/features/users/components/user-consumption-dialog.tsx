@@ -11,6 +11,7 @@ import type { User } from '../types'
 type Granularity = 'day' | 'week' | 'month'
 type Dimension = 'model' | 'group'
 type Point = { label: string; value: number; bucket: string; series: string }
+type ConsumptionResponse = Awaited<ReturnType<typeof getUserConsumption>>
 
 const getRange = (g: Granularity) => {
   const end = dayjs().endOf('day')
@@ -18,7 +19,7 @@ const getRange = (g: Granularity) => {
   return { start: start.unix(), end: end.unix() }
 }
 
-export function UserConsumptionDialog({ user, open, onOpenChange }: { user: User; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function UserConsumptionDialog({ user, open, onOpenChange, loadConsumption }: { user: User; open: boolean; onOpenChange: (open: boolean) => void; loadConsumption?: (startTimestamp: number, endTimestamp: number) => Promise<ConsumptionResponse> }) {
   const { t } = useTranslation()
   const [g, setG] = useState<Granularity>('week')
   const [dimension, setDimension] = useState<Dimension>('model')
@@ -30,7 +31,8 @@ export function UserConsumptionDialog({ user, open, onOpenChange }: { user: User
     let cancelled = false
     const range = getRange(g)
     setLoading(true)
-    getUserConsumption(user.username, range.start, range.end).then((res) => {
+    const request = loadConsumption ? loadConsumption(range.start, range.end) : getUserConsumption(user.username, range.start, range.end)
+    request.then((res) => {
       if (cancelled) return
       const map = new Map<string, number>()
       for (const item of res.data || []) {
@@ -44,7 +46,7 @@ export function UserConsumptionDialog({ user, open, onOpenChange }: { user: User
       setError(res.success ? '' : (res.message || 'Failed to load consumption'))
     }).catch(() => { if (!cancelled) { setError('Failed to load consumption'); setPoints([]) } }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [dimension, g, open, t, user.username])
+  }, [dimension, g, loadConsumption, open, t, user.username])
   const total = points.reduce((sum, point) => sum + point.value, 0)
   const buckets = Array.from(new Set(points.map((point) => point.bucket)))
   const series = Array.from(new Set(points.map((point) => point.series)))
