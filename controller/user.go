@@ -363,6 +363,69 @@ func GetUser(c *gin.Context) {
 	return
 }
 
+// SetUserInviter changes the inviter of a user. This is intentionally an
+// admin-only endpoint and rejects self/descendant assignments to keep the
+// inviter graph acyclic.
+func SetUserInviter(c *gin.Context) {
+	targetID, err := strconv.Atoi(c.Param("id"))
+	if err != nil || targetID <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	var req struct {
+		InviterID int `json:"inviter_id"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil || req.InviterID <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if targetID == req.InviterID {
+		common.ApiErrorMsg(c, "user cannot invite itself")
+		return
+	}
+	target, err := model.GetUserById(targetID, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !canManageTargetRole(c.GetInt("role"), target.Role) {
+		common.ApiErrorI18n(c, i18n.MsgUserNoPermissionSameLevel)
+		return
+	}
+	inviter, err := model.GetUserById(req.InviterID, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	// Walk upwards from the proposed inviter. If target is encountered, the
+	// assignment would create a cycle in the inviter tree.
+	seen := map[int]bool{}
+	for current := inviter; current.InviterId != 0; {
+		if current.InviterId == targetID {
+			common.ApiErrorMsg(c, "cannot assign a descendant as inviter")
+			return
+		}
+		if seen[current.InviterId] {
+			break
+		}
+		seen[current.InviterId] = true
+		current, err = model.GetUserById(current.InviterId, false)
+		if err != nil {
+			break
+		}
+	}
+	if err := model.DB.Model(&model.User{}).Where("id = ?", targetID).Update("inviter_id", req.InviterID).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	_ = model.InvalidateUserCache(targetID)
+	recordManageAuditFor(c, targetID, "user.inviter_update", map[string]interface{}{
+		"inviter_id": req.InviterID,
+		"inviter_username": inviter.Username,
+	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "success"})
+}
+
 func GenerateAccessToken(c *gin.Context) {
 	id := c.GetInt("id")
 	user, err := model.GetUserById(id, true)

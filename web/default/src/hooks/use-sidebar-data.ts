@@ -150,6 +150,11 @@ export function useSidebarData(): SidebarData {
             url: '/profile',
             icon: User,
           },
+          {
+            title: t('My direct subordinates'),
+            url: '/affiliate',
+            icon: Users,
+          },
         ],
       },
       {

@@ -82,6 +82,8 @@ import {
   getUser,
   getGroups,
   getPermissionCatalog,
+  searchUsers,
+  setUserInviter,
 } from '../api'
 import {
   BINDING_FIELDS,
@@ -125,6 +127,15 @@ export function UsersMutateDrawer({
   const currentUser = useAuthStore((s) => s.auth.user)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
+  const [inviterKeyword, setInviterKeyword] = useState('')
+  const [inviterOptions, setInviterOptions] = useState<
+    Array<{ id: number; username: string }>
+  >([])
+  const [selectedInviterId, setSelectedInviterId] = useState<
+    number | undefined
+  >()
+  const [inviterSearching, setInviterSearching] = useState(false)
+  const [inviterSaving, setInviterSaving] = useState(false)
 
   // Fetch groups
   const { data: groupsData } = useQuery({
@@ -236,6 +247,41 @@ export function UsersMutateDrawer({
       form.reset(transformUserToFormDefaults(result.data))
     }
     triggerRefresh()
+  }
+
+  const searchInviters = async () => {
+    const keyword = inviterKeyword.trim()
+    if (!keyword) return
+    setInviterSearching(true)
+    try {
+      const result = await searchUsers({ keyword, p: 1, page_size: 50 })
+      if (result.success) {
+        setInviterOptions(
+          (result.data?.items || [])
+            .filter((user) => user.id !== currentRow?.id)
+            .map((user) => ({ id: user.id, username: user.username }))
+        )
+      } else toast.error(result.message || t('Failed to search users'))
+    } finally {
+      setInviterSearching(false)
+    }
+  }
+
+  const saveInviter = async () => {
+    if (!currentRow || !selectedInviterId) return
+    setInviterSaving(true)
+    try {
+      const result = await setUserInviter(currentRow.id, selectedInviterId)
+      if (result.success) {
+        toast.success(t('Inviter updated successfully'))
+        setSelectedInviterId(undefined)
+        setInviterKeyword('')
+        setInviterOptions([])
+        await refreshUserData()
+      } else toast.error(result.message || t('Update failed'))
+    } finally {
+      setInviterSaving(false)
+    }
   }
 
   return (
@@ -375,6 +421,63 @@ export function UsersMutateDrawer({
                 />
               </SideDrawerSection>
 
+              {isUpdate && (
+                <SideDrawerSection>
+                  <h3 className='text-sm font-medium'>
+                    {t('Invitation relationship')}
+                  </h3>
+                  <p className='text-muted-foreground text-xs'>
+                    {t('Current inviter ID')}:{' '}
+                    {currentRow?.inviter_id || t('None')}
+                  </p>
+                  <div className='flex gap-2'>
+                    <Input
+                      value={inviterKeyword}
+                      onChange={(event) =>
+                        setInviterKeyword(event.target.value)
+                      }
+                      placeholder={t('Search by inviter ID or username')}
+                    />
+                    <Button
+                      type='button'
+                      variant='outline'
+                      onClick={searchInviters}
+                      disabled={inviterSearching}
+                    >
+                      {t('Search')}
+                    </Button>
+                  </div>
+                  <Select
+                    value={
+                      selectedInviterId ? String(selectedInviterId) : undefined
+                    }
+                    onValueChange={(value) =>
+                      setSelectedInviterId(Number(value))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t('Select inviter')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {inviterOptions.map((user) => (
+                          <SelectItem key={user.id} value={String(user.id)}>
+                            {user.username} (ID: {user.id})
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type='button'
+                    onClick={saveInviter}
+                    disabled={!selectedInviterId || inviterSaving}
+                  >
+                    {t('Save inviter')}
+                  </Button>
+                </SideDrawerSection>
+              )}
+
               {/* Group & Quota Settings (Update only) */}
               {isUpdate && (
                 <SideDrawerSection>
@@ -445,7 +548,25 @@ export function UsersMutateDrawer({
                       </FormItem>
                     )}
                   />
-                  <FormField control={form.control} name='restricted_public_groups' render={({ field }) => (<FormItem><FormLabel>{t('Restrict Public Groups')}</FormLabel><FormControl><MultiSelect options={groupOptions} selected={field.value || []} onChange={field.onChange} placeholder={t('Select groups')} emptyText={t('No group found.')} maxVisibleChips={4} /></FormControl></FormItem>)} />
+                  <FormField
+                    control={form.control}
+                    name='restricted_public_groups'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Restrict Public Groups')}</FormLabel>
+                        <FormControl>
+                          <MultiSelect
+                            options={groupOptions}
+                            selected={field.value || []}
+                            onChange={field.onChange}
+                            placeholder={t('Select groups')}
+                            emptyText={t('No group found.')}
+                            maxVisibleChips={4}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
 
                   <FormField
                     control={form.control}
@@ -496,7 +617,8 @@ export function UsersMutateDrawer({
                         <div>
                           <FormLabel>消费记录导出</FormLabel>
                           <FormDescription>
-                            允许该用户导出最终成功的消费记录，每日最多 5 次，单次最多 31 天。
+                            允许该用户导出最终成功的消费记录，每日最多 5
+                            次，单次最多 31 天。
                           </FormDescription>
                         </div>
                         <FormControl>
