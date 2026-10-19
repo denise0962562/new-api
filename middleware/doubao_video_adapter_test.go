@@ -26,6 +26,7 @@ func TestDoubaoVideoProtocolConvertPreservesOfficialMetadata(t *testing.T) {
 				Prompt   string         `json:"prompt"`
 				Images   []string       `json:"images"`
 				Duration int            `json:"duration"`
+				Draft    *bool          `json:"draft"`
 				Metadata map[string]any `json:"metadata"`
 			}
 			require.NoError(t, common.UnmarshalBodyReusable(c, &body))
@@ -33,10 +34,13 @@ func TestDoubaoVideoProtocolConvertPreservesOfficialMetadata(t *testing.T) {
 			assert.Equal(t, "first line\nsecond line", body.Prompt)
 			assert.Equal(t, []string{"https://example.com/input.png"}, body.Images)
 			assert.Equal(t, 6, body.Duration)
+			require.NotNil(t, body.Draft)
+			assert.True(t, *body.Draft)
 			assert.Equal(t, "1080p", body.Metadata["resolution"])
 			content, ok := body.Metadata["content"].([]any)
 			require.True(t, ok)
-			assert.Len(t, content, 4)
+			assert.Len(t, content, 5)
+			assert.Equal(t, map[string]any{"type": "draft_task", "draft_task": map[string]any{"id": "xxxxx"}}, content[4])
 
 			common.SetContextKey(c, constant.ContextKeyPublicTaskID, "task_public")
 			c.JSON(http.StatusOK, gin.H{"id": "upstream_secret"})
@@ -48,10 +52,12 @@ func TestDoubaoVideoProtocolConvertPreservesOfficialMetadata(t *testing.T) {
 			{"type":"text","text":"first line"},
 			{"type":"image_url","image_url":{"url":"https://example.com/input.png"}},
 			{"type":"video_url","video_url":{"url":"https://example.com/input.mp4"}},
-			{"type":"text","text":"second line"}
+			{"type":"text","text":"second line"},
+			{"type":"draft_task","draft_task":{"id":"xxxxx"}}
 		],
 		"duration":6,
-		"resolution":"1080p"
+		"resolution":"1080p",
+		"draft":true
 	}`
 	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")

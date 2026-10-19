@@ -80,3 +80,37 @@ func TestConvertToRequestPayloadPreservesOmniReferenceTaskType(t *testing.T) {
 		t.Fatalf("OmniReferenceTaskType = %q, want auto", body.OmniReferenceTaskType)
 	}
 }
+
+func TestConvertToRequestPayloadPreservesDraftAndDraftTask(t *testing.T) {
+	falseValue := false
+	req := relaycommon.TaskSubmitReq{
+		Model:  "doubao-seedance-2-0-fast-260128",
+		Prompt: "test prompt",
+		Metadata: map[string]interface{}{
+			"draft": &falseValue,
+			"content": []interface{}{
+				map[string]interface{}{
+					"type": "draft_task",
+					"draft_task": map[string]interface{}{"id": "xxxxx"},
+				},
+			},
+		},
+	}
+
+	body, err := (&TaskAdaptor{}).convertToRequestPayload(&req)
+	if err != nil {
+		t.Fatalf("convertToRequestPayload() error = %v", err)
+	}
+	if body.Draft == nil || bool(*body.Draft) {
+		t.Fatalf("Draft = %v, want explicit false", body.Draft)
+	}
+	var draftTask map[string]any
+	for _, item := range body.Content {
+		if item.Type == "draft_task" {
+			draftTask = item.DraftTask
+		}
+	}
+	if draftTask == nil || draftTask["id"] != "xxxxx" {
+		t.Fatalf("DraftTask = %#v, want id xxxxx", draftTask)
+	}
+}

@@ -28,12 +28,13 @@ import (
 // ============================
 
 type ContentItem struct {
-	Type     string    `json:"type,omitempty"`
-	Text     string    `json:"text,omitempty"`
-	ImageURL *MediaURL `json:"image_url,omitempty"`
-	VideoURL *MediaURL `json:"video_url,omitempty"`
-	AudioURL *MediaURL `json:"audio_url,omitempty"`
-	Role     string    `json:"role,omitempty"`
+	Type      string         `json:"type,omitempty"`
+	Text      string         `json:"text,omitempty"`
+	ImageURL  *MediaURL      `json:"image_url,omitempty"`
+	VideoURL  *MediaURL      `json:"video_url,omitempty"`
+	AudioURL  *MediaURL      `json:"audio_url,omitempty"`
+	Role      string         `json:"role,omitempty"`
+	DraftTask map[string]any `json:"draft_task,omitempty"`
 }
 
 type MediaURL struct {
@@ -42,24 +43,24 @@ type MediaURL struct {
 
 type requestPayload struct {
 	Model                 string         `json:"model"`
-	Content               []ContentItem  `json:"content,omitempty"`
-	CallbackURL           string         `json:"callback_url,omitempty"`
-	ReturnLastFrame       *dto.BoolValue `json:"return_last_frame,omitempty"`
-	ServiceTier           string         `json:"service_tier,omitempty"`
-	ExecutionExpiresAfter *dto.IntValue  `json:"execution_expires_after,omitempty"`
-	GenerateAudio         *dto.BoolValue `json:"generate_audio,omitempty"`
-	Draft                 *dto.BoolValue `json:"draft,omitempty"`
-	Tools                 []map[string]any `json:"tools,omitempty"`
-	SafetyIdentifier   string         `json:"safety_identifier,omitempty"`
-	Priority           *dto.IntValue  `json:"priority,omitempty"`
-	Resolution         string         `json:"resolution,omitempty"`
-	Ratio              string         `json:"ratio,omitempty"`
-	Duration           *dto.IntValue  `json:"duration,omitempty"`
-	Frames             *dto.IntValue  `json:"frames,omitempty"`
-	Seed               *dto.IntValue  `json:"seed,omitempty"`
-	CameraFixed        *dto.BoolValue `json:"camera_fixed,omitempty"`
-	Watermark          *dto.BoolValue `json:"watermark,omitempty"`
-	UsePersonCharacter *dto.BoolValue `json:"use_person_character,omitempty"`
+	Content                 []ContentItem    `json:"content,omitempty"`
+	CallbackURL             string           `json:"callback_url,omitempty"`
+	ReturnLastFrame         *dto.BoolValue   `json:"return_last_frame,omitempty"`
+	ServiceTier             string           `json:"service_tier,omitempty"`
+	ExecutionExpiresAfter   *dto.IntValue    `json:"execution_expires_after,omitempty"`
+	GenerateAudio           *dto.BoolValue   `json:"generate_audio,omitempty"`
+	Draft                   *dto.BoolValue   `json:"draft,omitempty"`
+	Tools                   []map[string]any `json:"tools,omitempty"`
+	SafetyIdentifier        string           `json:"safety_identifier,omitempty"`
+	Priority                *dto.IntValue    `json:"priority,omitempty"`
+	Resolution              string           `json:"resolution,omitempty"`
+	Ratio                   string           `json:"ratio,omitempty"`
+	Duration                *dto.IntValue    `json:"duration,omitempty"`
+	Frames                  *dto.IntValue    `json:"frames,omitempty"`
+	Seed                    *dto.IntValue    `json:"seed,omitempty"`
+	CameraFixed             *dto.BoolValue   `json:"camera_fixed,omitempty"`
+	Watermark               *dto.BoolValue   `json:"watermark,omitempty"`
+	UsePersonCharacter      *dto.BoolValue   `json:"use_person_character,omitempty"`
 	OmniReferenceTaskType string       `json:"omni_reference_task_type,omitempty"`
 }
 
