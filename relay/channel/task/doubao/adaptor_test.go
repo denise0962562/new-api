@@ -114,3 +114,26 @@ func TestConvertToRequestPayloadPreservesDraftAndDraftTask(t *testing.T) {
 		t.Fatalf("DraftTask = %#v, want id xxxxx", draftTask)
 	}
 }
+
+func TestConvertToRequestPayloadDoesNotAddEmptyTextForDraftTask(t *testing.T) {
+	req := relaycommon.TaskSubmitReq{
+		Model: "doubao-seedance-2-5-260628",
+		Metadata: map[string]interface{}{
+			"draft": true,
+			"content": []interface{}{
+				map[string]interface{}{
+					"type":       "draft_task",
+					"draft_task": map[string]interface{}{"id": "cgt-20261019125019-8lwc9"},
+				},
+			},
+		},
+	}
+
+	body, err := (&TaskAdaptor{}).convertToRequestPayload(&req)
+	if err != nil {
+		t.Fatalf("convertToRequestPayload() error = %v", err)
+	}
+	if len(body.Content) != 1 || body.Content[0].Type != "draft_task" {
+		t.Fatalf("Content = %#v, want only the draft_task item", body.Content)
+	}
+}

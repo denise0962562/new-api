@@ -87,6 +87,55 @@ func TestDoubaoVideoCreateResponseConvertPreservesErrors(t *testing.T) {
 	assert.JSONEq(t, `{"error":{"message":"invalid"}}`, recorder.Body.String())
 }
 
+func TestDoubaoVideoProtocolConvertAllowsDraftTaskWithoutTextForSeedance25(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v3/contents/generations/tasks", DoubaoVideoProtocolConvert(), func(c *gin.Context) {
+		assert.True(t, c.GetBool("doubao_draft_task_without_text"))
+		var body struct {
+			Prompt   string         `json:"prompt"`
+			Metadata map[string]any `json:"metadata"`
+		}
+		require.NoError(t, common.UnmarshalBodyReusable(c, &body))
+		assert.Empty(t, body.Prompt)
+		content, ok := body.Metadata["content"].([]any)
+		require.True(t, ok)
+		assert.Equal(t, map[string]any{"type": "draft_task", "draft_task": map[string]any{"id": "cgt-20261019125019-8lwc9"}}, content[0])
+		c.Status(http.StatusNoContent)
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{
+		"model":"doubao-seedance-2-5-260628",
+		"content":[{"type":"draft_task","draft_task":{"id":"cgt-20261019125019-8lwc9"}}],
+		"resolution":"1080p"
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusNoContent, recorder.Code)
+}
+
+func TestDoubaoVideoProtocolConvertStillRequiresTextWithoutDraftTask(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/v3/contents/generations/tasks", DoubaoVideoProtocolConvert(), func(c *gin.Context) {
+		t.Fatal("request without text or a draft task should not reach the next handler")
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(`{
+		"model":"doubao-seedance-2-5-260628",
+		"content":[],
+		"resolution":"1080p"
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "text content is required")
+}
+
 func TestDoubaoVideoProtocolConvertRewritesFetchPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

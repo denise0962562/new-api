@@ -37,7 +37,9 @@ func DoubaoVideoProtocolConvert() gin.HandlerFunc {
 
 		var prompts []string
 		var images []string
-		if content, ok := original["content"].([]any); ok {
+		var content []any
+		if parsedContent, ok := original["content"].([]any); ok {
+			content = parsedContent
 			for _, rawItem := range content {
 				item, ok := rawItem.(map[string]any)
 				if !ok {
@@ -59,9 +61,13 @@ func DoubaoVideoProtocolConvert() gin.HandlerFunc {
 		}
 
 		prompt := strings.Join(prompts, "\n")
-		if strings.TrimSpace(prompt) == "" {
+		allowDraftTaskWithoutText := strings.EqualFold(strings.TrimSpace(modelName), "doubao-seedance-2-5-260628") && hasDoubaoDraftTask(content)
+		if strings.TrimSpace(prompt) == "" && !allowDraftTaskWithoutText {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, "text content is required")
 			return
+		}
+		if allowDraftTaskWithoutText {
+			c.Set("doubao_draft_task_without_text", true)
 		}
 
 		unified := map[string]any{
@@ -91,6 +97,23 @@ func DoubaoVideoProtocolConvert() gin.HandlerFunc {
 		c.Set("relay_mode", relayconstant.RelayModeVideoSubmit)
 		c.Next()
 	}
+}
+
+func hasDoubaoDraftTask(content []any) bool {
+	for _, rawItem := range content {
+		item, ok := rawItem.(map[string]any)
+		if !ok || item["type"] != "draft_task" {
+			continue
+		}
+		draftTask, ok := item["draft_task"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if id, ok := draftTask["id"].(string); ok && strings.TrimSpace(id) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 type doubaoBufferedResponseWriter struct {
