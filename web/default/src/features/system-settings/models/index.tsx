@@ -59,6 +59,7 @@ const defaultModelSettings: ModelSettings = {
   TopupGroupRatio: '',
   GroupRatio: '',
   UserUsableGroups: '',
+  AuthorizationRequiredGroups: '{}',
   GroupGroupRatio: '',
   AutoGroups: '',
   DefaultUseAutoGroup: false,

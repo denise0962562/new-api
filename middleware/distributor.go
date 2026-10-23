@@ -92,7 +92,24 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if playgroundRequest.Group != "" {
-						if !service.GroupInUserUsableGroups(usingGroup, playgroundRequest.Group) && playgroundRequest.Group != usingGroup {
+						userId := c.GetInt("id")
+						user, userErr := model.GetUserCache(userId)
+						userGroup := usingGroup
+						if userErr == nil {
+							userGroup = user.Group
+						}
+						groupSelectable := service.GroupInUserUsableGroups(userGroup, playgroundRequest.Group)
+						if userErr == nil {
+							_, groupSelectable = service.GetUserUsableGroupsWithRestrictions(user.Group, user.GetSetting().RestrictedPublicGroups)[playgroundRequest.Group]
+						}
+						if !groupSelectable && playgroundRequest.Group != usingGroup {
+							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
+							return
+						}
+						// A protected group may be selectable when creating a key, but it
+						// must still be explicitly authorized before it can process a request.
+						if userErr == nil &&
+							!service.UserCanUseGroup(user.Group, user.GetSetting().RestrictedPublicGroups, user.GetSetting().AuthorizedGroups, playgroundRequest.Group) {
 							abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorGroupAccessDenied))
 							return
 						}

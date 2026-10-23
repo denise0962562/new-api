@@ -6,6 +6,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -71,6 +72,7 @@ func GetPricing(c *gin.Context) {
 	pricing := model.GetPricing()
 	userId, exists := c.Get("id")
 	usableGroup := map[string]string{}
+	authorizedGroups := map[string]bool{}
 	groupRatio := map[string]float64{}
 	usableGroupResolved := false
 	for s, f := range ratio_setting.GetGroupRatioCopy() {
@@ -84,6 +86,9 @@ func GetPricing(c *gin.Context) {
 			group = user.Group
 			restricted = user.GetSetting().RestrictedPublicGroups
 			usableGroup = service.GetUserUsableGroupsWithRestrictions(group, restricted)
+			for authorizedGroup := range service.GetUserAuthorizedGroups(user.Group, user.GetSetting().AuthorizedGroups) {
+				authorizedGroups[authorizedGroup] = true
+			}
 			usableGroupResolved = true
 			for g := range groupRatio {
 				groupRatio[g] = service.GetUserGroupRatio(group, g)
@@ -91,6 +96,11 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 	if !usableGroupResolved { usableGroup = service.GetUserUsableGroups(group) }
+	if !usableGroupResolved {
+		for groupName := range usableGroup {
+			authorizedGroups[groupName] = true
+		}
+	}
 	pricing = filterPricingByUsableGroups(pricing, usableGroup)
 	// check groupRatio contains usableGroup
 	for group := range ratio_setting.GetGroupRatioCopy() {
@@ -99,12 +109,22 @@ func GetPricing(c *gin.Context) {
 		}
 	}
 
+	usableGroupResponse := make(map[string]gin.H, len(usableGroup))
+	for groupName, desc := range usableGroup {
+		protected := setting.GetAuthorizationRequiredGroupsCopy()[groupName]
+		usableGroupResponse[groupName] = gin.H{
+			"desc": desc,
+			"ratio": groupRatio[groupName],
+			"authorization_required": protected,
+			"authorized": !protected || authorizedGroups[groupName],
+		}
+	}
 	c.JSON(200, gin.H{
 		"success":            true,
 		"data":               pricing,
 		"vendors":            model.GetVendors(),
 		"group_ratio":        groupRatio,
-		"usable_group":       usableGroup,
+		"usable_group":       usableGroupResponse,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
 		"auto_groups":        service.GetUserAutoGroupWithRestrictions(group, restricted),
 		"pricing_version":    "a42d372ccf0b5dd13ecf71203521f9d2",

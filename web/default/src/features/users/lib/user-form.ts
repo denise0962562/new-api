@@ -47,6 +47,7 @@ export const userFormSchema = z.object({
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
   restricted_public_groups: z.array(z.string()).optional(),
+  authorized_groups: z.array(z.string()).optional(),
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
@@ -68,6 +69,7 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   // Filled against the backend catalog at render time; see UsersMutateDrawer.
   admin_permissions: {},
   restricted_public_groups: [],
+  authorized_groups: [],
 }
 
 // ============================================================================
@@ -110,6 +112,7 @@ export function transformFormDataToPayload(
     payload.invoice_enabled = data.invoice_enabled === true
     payload.usage_export_enabled = data.usage_export_enabled === true
     payload.restricted_public_groups = data.restricted_public_groups || []
+    payload.authorized_groups = data.authorized_groups || []
     payload.id = userId
   }
 
@@ -134,5 +137,6 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     usage_export_enabled: user.usage_export_enabled === true,
     admin_permissions: user.admin_permissions ?? {},
     restricted_public_groups: user.restricted_public_groups ?? [],
+    authorized_groups: user.authorized_groups ?? [],
   }
 }

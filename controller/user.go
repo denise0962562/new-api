@@ -355,6 +355,7 @@ func GetUser(c *gin.Context) {
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)
 	user.RestrictedPublicGroups = user.GetSetting().RestrictedPublicGroups
+	user.AuthorizedGroups = user.GetSetting().AuthorizedGroups
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

@@ -65,6 +65,7 @@ export const userSchema = z.object({
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
   restricted_public_groups: z.array(z.string()).optional(),
+  authorized_groups: z.array(z.string()).optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -119,6 +120,7 @@ export interface UserFormData {
   usage_export_enabled?: boolean
   admin_permissions?: AdminPermissionMatrix
   restricted_public_groups?: string[]
+  authorized_groups?: string[]
 }
 
 export type ManageUserAction =

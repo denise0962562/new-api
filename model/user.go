@@ -56,6 +56,7 @@ type User struct {
 	UsageExportEnabled bool                      `json:"usage_export_enabled" gorm:"column:usage_export_enabled"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 	RestrictedPublicGroups []string            `json:"restricted_public_groups,omitempty" gorm:"-:all"`
+	AuthorizedGroups       []string            `json:"authorized_groups,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {
@@ -569,9 +570,14 @@ func (user *User) UpdateWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.First(&current, user.Id).Error; err != nil {
 		return err
 	}
-	if newUser.RestrictedPublicGroups != nil {
+	if newUser.RestrictedPublicGroups != nil || newUser.AuthorizedGroups != nil {
 		userSetting := current.GetSetting()
-		userSetting.RestrictedPublicGroups = newUser.RestrictedPublicGroups
+		if newUser.RestrictedPublicGroups != nil {
+			userSetting.RestrictedPublicGroups = newUser.RestrictedPublicGroups
+		}
+		if newUser.AuthorizedGroups != nil {
+			userSetting.AuthorizedGroups = newUser.AuthorizedGroups
+		}
 		settingBytes, marshalErr := common.Marshal(userSetting)
 		if marshalErr != nil {
 			return marshalErr
@@ -617,9 +623,14 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 	if err = tx.First(&current, user.Id).Error; err != nil {
 		return err
 	}
-	if newUser.RestrictedPublicGroups != nil {
+	if newUser.RestrictedPublicGroups != nil || newUser.AuthorizedGroups != nil {
 		userSetting := current.GetSetting()
-		userSetting.RestrictedPublicGroups = newUser.RestrictedPublicGroups
+		if newUser.RestrictedPublicGroups != nil {
+			userSetting.RestrictedPublicGroups = newUser.RestrictedPublicGroups
+		}
+		if newUser.AuthorizedGroups != nil {
+			userSetting.AuthorizedGroups = newUser.AuthorizedGroups
+		}
 		settingBytes, marshalErr := common.Marshal(userSetting)
 		if marshalErr != nil { return marshalErr }
 		updates["setting"] = string(settingBytes)

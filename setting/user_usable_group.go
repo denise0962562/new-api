@@ -1,7 +1,6 @@
 package setting
 
 import (
-	"encoding/json"
 	"sync"
 
 	"github.com/QuantumNous/new-api/common"
@@ -12,6 +11,9 @@ var userUsableGroups = map[string]string{
 	"vip":     "vip分组",
 }
 var userUsableGroupsMutex sync.RWMutex
+
+var authorizationRequiredGroups = map[string]bool{}
+var authorizationRequiredGroupsMutex sync.RWMutex
 
 func GetUserUsableGroupsCopy() map[string]string {
 	userUsableGroupsMutex.RLock()
@@ -28,7 +30,7 @@ func UserUsableGroups2JSONString() string {
 	userUsableGroupsMutex.RLock()
 	defer userUsableGroupsMutex.RUnlock()
 
-	jsonBytes, err := json.Marshal(userUsableGroups)
+	jsonBytes, err := common.Marshal(userUsableGroups)
 	if err != nil {
 		common.SysLog("error marshalling user groups: " + err.Error())
 	}
@@ -40,7 +42,7 @@ func UpdateUserUsableGroupsByJSONString(jsonStr string) error {
 	defer userUsableGroupsMutex.Unlock()
 
 	userUsableGroups = make(map[string]string)
-	return json.Unmarshal([]byte(jsonStr), &userUsableGroups)
+	return common.UnmarshalJsonStr(jsonStr, &userUsableGroups)
 }
 
 func GetUsableGroupDescription(groupName string) string {
@@ -51,4 +53,47 @@ func GetUsableGroupDescription(groupName string) string {
 		return desc
 	}
 	return groupName
+}
+
+func GetAuthorizationRequiredGroupsCopy() map[string]bool {
+	authorizationRequiredGroupsMutex.RLock()
+	defer authorizationRequiredGroupsMutex.RUnlock()
+
+	groups := make(map[string]bool, len(authorizationRequiredGroups))
+	for group, required := range authorizationRequiredGroups {
+		if required {
+			groups[group] = true
+		}
+	}
+	return groups
+}
+
+func AuthorizationRequiredGroups2JSONString() string {
+	authorizationRequiredGroupsMutex.RLock()
+	defer authorizationRequiredGroupsMutex.RUnlock()
+
+	jsonBytes, err := common.Marshal(authorizationRequiredGroups)
+	if err != nil {
+		common.SysLog("error marshalling authorization-required groups: " + err.Error())
+	}
+	return string(jsonBytes)
+}
+
+func UpdateAuthorizationRequiredGroupsByJSONString(jsonStr string) error {
+	groups := make(map[string]bool)
+	if err := common.UnmarshalJsonStr(jsonStr, &groups); err != nil {
+		return err
+	}
+
+	filtered := make(map[string]bool, len(groups))
+	for group, required := range groups {
+		if required {
+			filtered[group] = true
+		}
+	}
+
+	authorizationRequiredGroupsMutex.Lock()
+	authorizationRequiredGroups = filtered
+	authorizationRequiredGroupsMutex.Unlock()
+	return nil
 }

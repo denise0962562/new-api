@@ -16,67 +16,70 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useQuery } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
-import { Button } from '@/components/ui/button'
-import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
+import { Button } from "@/components/ui/button";
+import { getPerfMetricsSummary } from "@/features/performance-metrics/api";
 
 import {
   DEFAULT_PRICING_CARD_PAGE_SIZE,
   DEFAULT_TOKEN_UNIT,
-} from '../constants'
-import type { PricingModel, TokenUnit } from '../types'
-import { ModelCard } from './model-card'
-import type { ModelPerfBadgeData } from './model-perf-badge'
+} from "../constants";
+import type { PricingModel, TokenUnit } from "../types";
+import { ModelCard } from "./model-card";
+import type { ModelPerfBadgeData } from "./model-perf-badge";
 
 export interface ModelCardGridProps {
-  models: PricingModel[]
-  onModelClick: (modelName: string) => void
-  priceRate?: number
-  usdExchangeRate?: number
-  tokenUnit?: TokenUnit
-  showRechargePrice?: boolean
-  usableGroup?: Record<string, { desc: string; ratio: number }>
+  models: PricingModel[];
+  onModelClick: (modelName: string) => void;
+  priceRate?: number;
+  usdExchangeRate?: number;
+  tokenUnit?: TokenUnit;
+  showRechargePrice?: boolean;
+  usableGroup?: Record<
+    string,
+    { desc: string; ratio: number; authorized?: boolean }
+  >;
 }
 
 export function ModelCardGrid(props: ModelCardGridProps) {
-  const { t } = useTranslation()
-  const [page, setPage] = useState(1)
-  const pageSize = DEFAULT_PRICING_CARD_PAGE_SIZE
-  const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
-  const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize))
-  const currentPage = Math.min(page, totalPages)
+  const { t } = useTranslation();
+  const [page, setPage] = useState(1);
+  const pageSize = DEFAULT_PRICING_CARD_PAGE_SIZE;
+  const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT;
+  const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
 
   const perfQuery = useQuery({
-    queryKey: ['perf-metrics-summary', 24],
+    queryKey: ["perf-metrics-summary", 24],
     queryFn: () => getPerfMetricsSummary(24),
     staleTime: 60 * 1000,
     retry: false,
-  })
+  });
 
   const pagedModels = useMemo(() => {
-    const start = (currentPage - 1) * pageSize
-    return props.models.slice(start, start + pageSize)
-  }, [currentPage, pageSize, props.models])
+    const start = (currentPage - 1) * pageSize;
+    return props.models.slice(start, start + pageSize);
+  }, [currentPage, pageSize, props.models]);
 
   const perfMap = useMemo(() => {
-    const map = new Map<string, ModelPerfBadgeData>()
+    const map = new Map<string, ModelPerfBadgeData>();
     for (const model of perfQuery.data?.data?.models ?? []) {
-      map.set(model.model_name, model)
+      map.set(model.model_name, model);
     }
-    return map
-  }, [perfQuery.data])
+    return map;
+  }, [perfQuery.data]);
 
   if (props.models.length === 0) {
-    return null
+    return null;
   }
 
   return (
-    <div className='space-y-4 sm:space-y-5'>
-      <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3.5 xl:grid-cols-3 2xl:grid-cols-4'>
+    <div className="space-y-4 sm:space-y-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3.5 xl:grid-cols-3 2xl:grid-cols-4">
         {pagedModels.map((model) => (
           <ModelCard
             key={model.id ?? model.model_name}
@@ -86,48 +89,48 @@ export function ModelCardGrid(props: ModelCardGridProps) {
             usdExchangeRate={props.usdExchangeRate}
             showRechargePrice={props.showRechargePrice}
             usableGroup={props.usableGroup}
-            perf={perfMap.get(model.model_name || '')}
-            onClick={() => props.onModelClick(model.model_name || '')}
+            perf={perfMap.get(model.model_name || "")}
+            onClick={() => props.onModelClick(model.model_name || "")}
           />
         ))}
       </div>
 
       {totalPages > 1 && (
-        <div className='text-muted-foreground bg-background/70 flex flex-col items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm shadow-sm backdrop-blur sm:flex-row'>
-          <p className='text-muted-foreground'>
-            {t('Page {{current}} of {{total}}', {
+        <div className="text-muted-foreground bg-background/70 flex flex-col items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm shadow-sm backdrop-blur sm:flex-row">
+          <p className="text-muted-foreground">
+            {t("Page {{current}} of {{total}}", {
               current: currentPage,
               total: totalPages,
             })}
           </p>
-          <div className='flex items-center gap-2'>
+          <div className="flex items-center gap-2">
             <Button
-              type='button'
-              variant='outline'
-              size='sm'
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={currentPage <= 1}
-              className='gap-1.5'
+              className="gap-1.5"
             >
-              <ChevronLeft className='size-4' />
-              {t('Previous page')}
+              <ChevronLeft className="size-4" />
+              {t("Previous page")}
             </Button>
             <Button
-              type='button'
-              variant='outline'
-              size='sm'
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={() =>
                 setPage((current) => Math.min(totalPages, current + 1))
               }
               disabled={currentPage >= totalPages}
-              className='gap-1.5'
+              className="gap-1.5"
             >
-              {t('Next page')}
-              <ChevronRight className='size-4' />
+              {t("Next page")}
+              <ChevronRight className="size-4" />
             </Button>
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }

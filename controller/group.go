@@ -29,14 +29,23 @@ func GetUserGroups(c *gin.Context) {
 	userId := c.GetInt("id")
 	userGroup, _ = model.GetUserGroup(userId, false)
 	var restricted []string
-	if user, err := model.GetUserCache(userId); err == nil { restricted = user.GetSetting().RestrictedPublicGroups }
+	var additionalAuthorizedGroups []string
+	if user, err := model.GetUserCache(userId); err == nil {
+		userSettings := user.GetSetting()
+		restricted = userSettings.RestrictedPublicGroups
+		additionalAuthorizedGroups = userSettings.AuthorizedGroups
+	}
 	userUsableGroups := service.GetUserUsableGroupsWithRestrictions(userGroup, restricted)
+	authorized := service.GetUserAuthorizedGroups(userGroup, additionalAuthorizedGroups)
+	authorizationRequiredGroups := setting.GetAuthorizationRequiredGroupsCopy()
 	for groupName, _ := range ratio_setting.GetGroupRatioCopy() {
-		// UserUsableGroups contains the groups that the user can use
 		if desc, ok := userUsableGroups[groupName]; ok {
+			_, hasAuthorization := authorized[groupName]
 			usableGroups[groupName] = map[string]interface{}{
-				"ratio": service.GetUserGroupRatio(userGroup, groupName),
-				"desc":  desc,
+				"ratio":                  service.GetUserGroupRatio(userGroup, groupName),
+				"desc":                   desc,
+				"authorization_required": authorizationRequiredGroups[groupName],
+				"authorized":             !authorizationRequiredGroups[groupName] || hasAuthorization,
 			}
 		}
 	}

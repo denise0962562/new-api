@@ -58,6 +58,32 @@ func GetUserUsableGroupsWithRestrictions(userGroup string, restricted []string) 
 	return groupsCopy
 }
 
+// GetUserAuthorizedGroups returns user group permissions augmented with groups
+// assigned to the user by an administrator.
+func GetUserAuthorizedGroups(userGroup string, additionalGroups []string) map[string]struct{} {
+	authorized := make(map[string]struct{})
+	for _, group := range SplitUserGroups(userGroup) {
+		authorized[group] = struct{}{}
+	}
+	for _, group := range additionalGroups {
+		if group = strings.TrimSpace(group); group != "" {
+			authorized[group] = struct{}{}
+		}
+	}
+	return authorized
+}
+
+func UserCanUseGroup(userGroup string, restricted, additionalGroups []string, targetGroup string) bool {
+	if _, usable := GetUserUsableGroupsWithRestrictions(userGroup, restricted)[targetGroup]; !usable {
+		return false
+	}
+	if !setting.GetAuthorizationRequiredGroupsCopy()[targetGroup] {
+		return true
+	}
+	_, authorized := GetUserAuthorizedGroups(userGroup, additionalGroups)[targetGroup]
+	return authorized
+}
+
 func GroupInUserUsableGroups(userGroup, groupName string) bool {
 	_, ok := GetUserUsableGroups(userGroup)[groupName]
 	return ok

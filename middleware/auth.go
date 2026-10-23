@@ -474,6 +474,10 @@ func TokenAuth() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
 				return
 			}
+			if !service.UserCanUseGroup(userGroup, userCache.GetSetting().RestrictedPublicGroups, userCache.GetSetting().AuthorizedGroups, tokenGroup) {
+				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("No permission to use group %s; administrator authorization is required", tokenGroup))
+				return
+			}
 			// check group in common.GroupRatio
 			if !ratio_setting.ContainsGroupRatio(tokenGroup) {
 				if tokenGroup != "auto" {
