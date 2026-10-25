@@ -183,6 +183,15 @@ export function processChartData(
         stack: true,
         legends: { visible: true, selectMode: 'single' },
       },
+      spec_group: {
+        type: 'bar',
+        data: [{ id: 'groupData', values: [] }],
+        xField: 'Time',
+        yField: 'Usage',
+        seriesField: 'Group',
+        stack: true,
+        legends: { visible: true, selectMode: 'single' },
+      },
       spec_model_line: {
         type: 'area',
         data: [{ id: 'lineData', values: [] }],
@@ -345,6 +354,36 @@ export function processChartData(
     lineValues.push(...timeData)
   })
   lineValues.sort((a, b) => a.Time.localeCompare(b.Time))
+
+  const timeGroupMap = new Map<string, Map<string, number>>()
+  const groupTotals = new Map<string, number>()
+  data.forEach((item) => {
+    const time = formatChartTime(Number(item.created_at), timeGranularity)
+    const group = item.use_group?.trim() || tt('Unknown')
+    const quota = Number(item.quota) || 0
+    if (!timeGroupMap.has(time)) timeGroupMap.set(time, new Map())
+    const values = timeGroupMap.get(time)!
+    values.set(group, (values.get(group) || 0) + quota)
+    groupTotals.set(group, (groupTotals.get(group) || 0) + quota)
+  })
+  const groups = [...groupTotals.keys()].sort()
+  const groupDomain = [...groups]
+  const groupColor = {
+    type: 'ordinal',
+    domain: groupDomain,
+    range: getDashboardChartColors(groupDomain.length),
+  }
+  const groupValues = chartTimes.flatMap((time) =>
+    groups.map((group) => {
+      const rawQuota = timeGroupMap.get(time)?.get(group) || 0
+      return {
+        Time: time,
+        Group: group,
+        rawQuota,
+        Usage: Number((rawQuota / quotaPerUnit).toFixed(4)),
+      }
+    })
+  )
 
   // Area chart: top models by quota + "Other" bucket (too many series = unreadable)
   const MAX_AREA_MODELS = 15
@@ -573,6 +612,37 @@ export function processChartData(
         },
       },
       point: { visible: false },
+      background: { fill: 'transparent' },
+      animation: true,
+    },
+    spec_group: {
+      type: 'bar',
+      data: [{ id: 'groupData', values: groupValues }],
+      xField: 'Time',
+      yField: 'Usage',
+      seriesField: 'Group',
+      stack: true,
+      legends: { visible: true, selectMode: 'single' },
+      color: groupColor,
+      bar: {
+        state: { hover: { stroke: '#000', lineWidth: 1 } },
+      },
+      tooltip: { dimension: {
+        content: [
+          {
+            key: (datum: Record<string, unknown>) => datum?.Group,
+            value: (datum: Record<string, unknown>) =>
+              Number(datum?.rawQuota) || 0,
+          },
+        ],
+        updateContent: (array: TooltipLineItem[]) => {
+          array.sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
+          const total = array.reduce((sum, item) => sum + (Number(item.value) || 0), 0)
+          array = array.map((item) => ({ ...item, value: formatQuotaValue(Number(item.value) || 0) }))
+          array.unshift({ key: tt('Total:'), value: formatQuotaValue(total) })
+          return array
+        },
+      } },
       background: { fill: 'transparent' },
       animation: true,
     },

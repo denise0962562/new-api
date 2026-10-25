@@ -68,6 +68,7 @@ export function ConsumptionDistributionChart(
   const [chartType, setChartType] = useState<ConsumptionDistributionChartType>(
     props.defaultChartType ?? 'bar'
   )
+  const [groupMode, setGroupMode] = useState(false)
   const [themeReady, setThemeReady] = useState(false)
   const themeManagerRef = useRef<
     (typeof import('@visactor/vchart'))['ThemeManager'] | null
@@ -107,10 +108,15 @@ export function ConsumptionDistributionChart(
       ),
     [props.data, props.loading, timeGranularity, t, chartRadius]
   )
-  const spec = chartType === 'bar' ? chartData.spec_line : chartData.spec_area
+  const spec = groupMode
+    ? chartData.spec_group
+    : chartType === 'bar'
+      ? chartData.spec_line
+      : chartData.spec_area
   const specType = typeof spec?.type === 'string' ? spec.type : chartType
   const chartKey = [
     chartType,
+    groupMode ? 'group' : 'model',
     specType,
     props.loading ? 'loading' : 'ready',
     props.data.length,
@@ -136,7 +142,10 @@ export function ConsumptionDistributionChart(
               <button
                 key={item.value}
                 type='button'
-                onClick={() => setChartType(item.value)}
+                onClick={() => {
+                  setGroupMode(false)
+                  setChartType(item.value)
+                }}
                 className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
                   chartType === item.value
                     ? 'bg-background text-foreground shadow-sm'
@@ -148,6 +157,13 @@ export function ConsumptionDistributionChart(
               </button>
             )
           })}
+          <button
+            type='button'
+            onClick={() => setGroupMode(true)}
+            className={`shrink-0 rounded-md px-3 text-xs font-medium transition-colors ${groupMode ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('Group Amounts')}
+          </button>
         </div>
       </div>
 

@@ -27,6 +27,7 @@ export interface QuotaDataItem {
   user_id?: number
   username?: string
   model_name?: string
+  use_group?: string
   created_at: number
   token_used?: number
   count?: number
@@ -240,6 +241,7 @@ export interface ProcessedChartData {
   spec_pie: VChartSpec
   spec_line: VChartSpec
   spec_area: VChartSpec
+  spec_group: VChartSpec
   spec_model_line: VChartSpec
   spec_rank_bar: VChartSpec
   totalQuotaDisplay: string

@@ -3579,6 +3579,7 @@
     "Quota adjusted successfully": "调整额度成功",
     "Quota consumed before charging users": "向用户收费前消耗的配额",
     "Quota Distribution": "消耗分布",
+    "Group Amounts": "分组金额",
     "Quota given to invited users": "授予被邀请用户的配额",
     "Quota given to users who invite others": "授予邀请其他用户的配额",
     "Quota must be a positive number": "配额必须是正数",
