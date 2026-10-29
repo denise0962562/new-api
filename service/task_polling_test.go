@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -44,6 +45,9 @@ type taskPollingFetchAdaptor struct {
 	taskIDs      []string
 	fetched      chan string
 	blockTaskID  string
+	holdAll      bool
+	active       int
+	maxActive    int
 	blockStarted chan struct{}
 	releaseBlock chan struct{}
 	blockOnce    sync.Once
@@ -53,7 +57,24 @@ func (a *taskPollingFetchAdaptor) Init(_ *relaycommon.RelayInfo) {}
 
 func (a *taskPollingFetchAdaptor) FetchTask(_ string, _ string, body map[string]any, _ string) (*http.Response, error) {
 	taskID, _ := body["task_id"].(string)
-	if taskID == a.blockTaskID && a.releaseBlock != nil {
+	if a.holdAll && a.releaseBlock != nil {
+		a.mu.Lock()
+		a.active++
+		if a.active > a.maxActive {
+			a.maxActive = a.active
+		}
+		a.mu.Unlock()
+		if a.blockStarted != nil {
+			select {
+			case a.blockStarted <- struct{}{}:
+			default:
+			}
+		}
+		<-a.releaseBlock
+		a.mu.Lock()
+		a.active--
+		a.mu.Unlock()
+	} else if taskID == a.blockTaskID && a.releaseBlock != nil {
 		a.blockOnce.Do(func() {
 			if a.blockStarted != nil {
 				close(a.blockStarted)
@@ -111,6 +132,10 @@ func (a *taskPollingFetchAdaptor) fetchedTaskIDs() []string {
 }
 
 func seedTaskPollingChannel(t *testing.T, id int, disableSleep bool) {
+	seedTaskPollingChannelWithConcurrency(t, id, disableSleep, 1)
+}
+
+func seedTaskPollingChannelWithConcurrency(t *testing.T, id int, disableSleep bool, concurrency int) {
 	t.Helper()
 	ch := &model.Channel{
 		Id:     id,
@@ -119,10 +144,61 @@ func seedTaskPollingChannel(t *testing.T, id int, disableSleep bool) {
 		Key:    "sk-test",
 		Status: common.ChannelStatusEnabled,
 	}
-	if disableSleep {
-		ch.SetOtherSettings(dto.ChannelOtherSettings{DisableTaskPollingSleep: true})
-	}
+	ch.SetOtherSettings(dto.ChannelOtherSettings{
+		DisableTaskPollingSleep: disableSleep,
+		TaskPollingConcurrency:  concurrency,
+	})
 	require.NoError(t, model.DB.Create(ch).Error)
+}
+
+func TestUpdateVideoTasksRespectsPerChannelConcurrency(t *testing.T) {
+	truncate(t)
+
+	const channelID = 103
+	seedTaskPollingChannelWithConcurrency(t, channelID, true, 3)
+	tasks := make([]*model.Task, 5)
+	taskM := make(map[string]*model.Task)
+	taskIDs := make([]string, 0, len(tasks))
+	for i := range tasks {
+		upstreamID := fmt.Sprintf("upstream_concurrent_%d", i)
+		tasks[i] = seedPollingTask(t, channelID, fmt.Sprintf("task_concurrent_%d", i), upstreamID)
+		taskM[upstreamID] = tasks[i]
+		taskIDs = append(taskIDs, upstreamID)
+	}
+
+	adaptor := &taskPollingFetchAdaptor{
+		holdAll:      true,
+		blockStarted: make(chan struct{}, 5),
+		releaseBlock: make(chan struct{}),
+	}
+	previousFactory := GetTaskAdaptorFunc
+	GetTaskAdaptorFunc = func(constant.TaskPlatform) TaskPollingAdaptor { return adaptor }
+	t.Cleanup(func() { GetTaskAdaptorFunc = previousFactory })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- UpdateVideoTasks(context.Background(), constant.TaskPlatform("kling"), map[int][]string{
+			channelID: taskIDs,
+		}, taskM)
+	}()
+
+	for i := 0; i < 3; i++ {
+		select {
+		case <-adaptor.blockStarted:
+		case <-time.After(time.Second):
+			t.Fatal("expected three concurrent task queries to start")
+		}
+	}
+	select {
+	case <-adaptor.blockStarted:
+		t.Fatal("more than the configured number of task queries started")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(adaptor.releaseBlock)
+	require.NoError(t, <-done)
+	assert.Equal(t, 3, adaptor.maxActive)
+	assert.Equal(t, 5, adaptor.fetchCount())
 }
 
 func seedPollingTask(t *testing.T, channelID int, publicID string, upstreamID string) *model.Task {

@@ -1463,6 +1463,8 @@
     "Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.": "请勿过度信任此功能，IP 可能被伪造，请配合 nginx 和 cdn 等网关使用",
     "Do not repeat check-in; only once per day": "请勿重复签到；每天仅一次",
     "Do not wait one second between polling async tasks for this channel": "该渠道轮询异步任务时不等待一秒",
+    "Async task polling concurrency": "异步任务轮询并发数",
+    "Maximum number of task status queries sent to this channel at the same time (1–20)": "该渠道同时查询任务状态的最大数量（1–20）",
     "Do regex replacement in the target field": "在目标字段里做正则替换",
     "Do string replacement in the target field": "在目标字段里做字符串替换",
     "Docs": "文档",

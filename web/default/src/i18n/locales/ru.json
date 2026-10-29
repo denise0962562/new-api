@@ -1424,6 +1424,8 @@
     "Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.": "Не доверяйте этой функции слишком сильно. IP может быть подделан. Используйте с nginx, CDN и другими шлюзами.",
     "Do not repeat check-in; only once per day": "Не повторяйте отметку; только один раз в день",
     "Do not wait one second between polling async tasks for this channel": "Не ждать одну секунду между опросами асинхронных задач для этого канала",
+    "Async task polling concurrency": "Параллельность опроса асинхронных задач",
+    "Maximum number of task status queries sent to this channel at the same time (1–20)": "Максимальное число одновременных запросов статуса задач для этого канала (1–20)",
     "Do regex replacement in the target field": "Выполнить замену по регулярному выражению в целевом поле",
     "Do string replacement in the target field": "Выполнить замену строки в целевом поле",
     "Docs": "Документы",

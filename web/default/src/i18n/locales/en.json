@@ -1463,6 +1463,8 @@
     "Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.": "Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.",
     "Do not repeat check-in; only once per day": "Do not repeat check-in; only once per day",
     "Do not wait one second between polling async tasks for this channel": "Do not wait one second between polling async tasks for this channel",
+    "Async task polling concurrency": "Async task polling concurrency",
+    "Maximum number of task status queries sent to this channel at the same time (1–20)": "Maximum number of task status queries sent to this channel at the same time (1–20)",
     "Do regex replacement in the target field": "Do regex replacement in the target field",
     "Do string replacement in the target field": "Do string replacement in the target field",
     "Docs": "Docs",

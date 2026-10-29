@@ -24,6 +24,8 @@ import (
 	"github.com/samber/lo"
 )
 
+const maxTaskPollingConcurrency = 20
+
 // TaskPollingAdaptor 定义轮询所需的最小适配器接口，避免 service -> relay 的循环依赖
 type TaskPollingAdaptor interface {
 	Init(info *relaycommon.RelayInfo)
@@ -414,24 +416,51 @@ func updateVideoTasks(ctx context.Context, platform constant.TaskPlatform, chann
 	info.ApiKey = cacheGetChannel.Key
 	adaptor.Init(info)
 	disablePollingSleep := cacheGetChannel.GetOtherSettings().DisableTaskPollingSleep
-	for i, taskId := range taskIds {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {
-			logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
-		}
-		if disablePollingSleep || i == len(taskIds)-1 {
-			continue
-		}
+	concurrency := cacheGetChannel.GetOtherSettings().TaskPollingConcurrency
+	if concurrency < 1 {
+		concurrency = 1
+	} else if concurrency > maxTaskPollingConcurrency {
+		concurrency = maxTaskPollingConcurrency
+	}
+	if concurrency > len(taskIds) {
+		concurrency = len(taskIds)
+	}
 
-		// sleep 1 second between tasks for this channel only.
+	taskQueue := make(chan string)
+	var wg sync.WaitGroup
+	for worker := 0; worker < concurrency; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for taskId := range taskQueue {
+				if err := updateVideoSingleTask(ctx, adaptor, cacheGetChannel, taskId, taskM); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("Failed to update video task %s: %s", taskId, err.Error()))
+				}
+			}
+		}()
+	}
+
+	for i, taskId := range taskIds {
 		select {
 		case <-ctx.Done():
+			close(taskQueue)
+			wg.Wait()
 			return ctx.Err()
-		case <-time.After(1 * time.Second):
+		case taskQueue <- taskId:
+		}
+		if !disablePollingSleep && i < len(taskIds)-1 {
+			// Keep the existing per-channel request pacing while allowing in-flight requests to overlap.
+			select {
+			case <-ctx.Done():
+				close(taskQueue)
+				wg.Wait()
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
 		}
 	}
+	close(taskQueue)
+	wg.Wait()
 	return nil
 }
 

@@ -1424,6 +1424,8 @@
     "Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.": "この機能を過信しないでください。IPは偽装される可能性があります。nginx、CDNなどのゲートウェイと併用してください。",
     "Do not repeat check-in; only once per day": "チェックインを繰り返さないでください；1日1回のみ",
     "Do not wait one second between polling async tasks for this channel": "このチャネルの非同期タスクをポーリングする間に1秒待機しない",
+    "Async task polling concurrency": "非同期タスクのポーリング同時実行数",
+    "Maximum number of task status queries sent to this channel at the same time (1–20)": "このチャネルで同時に実行するタスク状態照会の最大数（1～20）",
     "Do regex replacement in the target field": "ターゲットフィールドで正規表現置換",
     "Do string replacement in the target field": "ターゲットフィールドで文字列置換",
     "Docs": "ドキュメント",

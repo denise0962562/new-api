@@ -1424,6 +1424,8 @@
     "Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.": "Đừng tin tưởng quá mức vào tính năng này. IP có thể bị giả mạo. Hãy sử dụng cùng với nginx, CDN và các gateway khác.",
     "Do not repeat check-in; only once per day": "Không lặp lại check-in; chỉ một lần mỗi ngày",
     "Do not wait one second between polling async tasks for this channel": "Không chờ một giây giữa các lần thăm dò tác vụ bất đồng bộ cho kênh này",
+    "Async task polling concurrency": "Số luồng thăm dò tác vụ bất đồng bộ",
+    "Maximum number of task status queries sent to this channel at the same time (1–20)": "Số truy vấn trạng thái tác vụ tối đa đồng thời cho kênh này (1–20)",
     "Do regex replacement in the target field": "Thực hiện thay thế regex trong trường đích",
     "Do string replacement in the target field": "Thực hiện thay thế chuỗi trong trường đích",
     "Docs": "Tài liệu",

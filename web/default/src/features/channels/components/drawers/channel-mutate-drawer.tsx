@@ -723,6 +723,7 @@ export function ChannelMutateDrawer({
   const currentDisableTaskPollingSleep = form.watch(
     'disable_task_polling_sleep'
   )
+  const currentTaskPollingConcurrency = form.watch('task_polling_concurrency')
   const currentProxy = form.watch('proxy')
   const currentSystemPrompt = form.watch('system_prompt')
   const currentSystemPromptOverride = form.watch('system_prompt_override')
@@ -927,6 +928,7 @@ export function ChannelMutateDrawer({
     currentThinkingToContent ||
     currentPassThroughBodyEnabled ||
     currentDisableTaskPollingSleep ||
+    (currentTaskPollingConcurrency ?? 1) !== 1 ||
     currentProxy?.trim() ||
     currentSystemPrompt?.trim() ||
     currentSystemPromptOverride
@@ -4023,6 +4025,47 @@ export function ChannelMutateDrawer({
                                       <Switch
                                         checked={field.value}
                                         onCheckedChange={field.onChange}
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='task_polling_concurrency'
+                                render={({ field }) => (
+                                  <FormItem className='px-4 py-3'>
+                                    <FormLabel>
+                                      {t('Async task polling concurrency')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(
+                                        'Maximum number of task status queries sent to this channel at the same time (1–20)'
+                                      )}
+                                    </FormDescription>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={1}
+                                        max={20}
+                                        step={1}
+                                        value={field.value ?? 1}
+                                        onChange={(event) =>
+                                          field.onChange(
+                                            Math.min(
+                                              20,
+                                              Math.max(
+                                                1,
+                                                Math.trunc(
+                                                  Number(
+                                                    event.target.value
+                                                  ) || 1
+                                                )
+                                              )
+                                            )
+                                          )
+                                        }
                                       />
                                     </FormControl>
                                   </FormItem>
