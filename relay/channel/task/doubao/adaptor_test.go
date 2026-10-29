@@ -137,3 +137,21 @@ func TestConvertToRequestPayloadDoesNotAddEmptyTextForDraftTask(t *testing.T) {
 		t.Fatalf("Content = %#v, want only the draft_task item", body.Content)
 	}
 }
+
+func TestConvertToRequestPayloadPreservesOutputFormat(t *testing.T) {
+	req := relaycommon.TaskSubmitReq{
+		Model:  "doubao-seedance-2-5-260628",
+		Prompt: "test prompt",
+		Metadata: map[string]interface{}{
+			"output_format": "mp4",
+		},
+	}
+
+	body, err := (&TaskAdaptor{}).convertToRequestPayload(&req)
+	if err != nil {
+		t.Fatalf("convertToRequestPayload() error = %v", err)
+	}
+	if body.OutputFormat != "mp4" {
+		t.Fatalf("OutputFormat = %q, want mp4", body.OutputFormat)
+	}
+}

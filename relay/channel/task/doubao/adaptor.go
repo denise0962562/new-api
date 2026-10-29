@@ -62,7 +62,8 @@ type requestPayload struct {
 	CameraFixed             *dto.BoolValue   `json:"camera_fixed,omitempty"`
 	Watermark               *dto.BoolValue   `json:"watermark,omitempty"`
 	UsePersonCharacter      *dto.BoolValue   `json:"use_person_character,omitempty"`
-	OmniReferenceTaskType string       `json:"omni_reference_task_type,omitempty"`
+	OmniReferenceTaskType   string           `json:"omni_reference_task_type,omitempty"`
+	OutputFormat            string           `json:"output_format,omitempty"`
 }
 
 type responsePayload struct {
