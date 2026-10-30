@@ -19,6 +19,9 @@ type createQuotaApplicationRequest struct {
 	TargetUserId       int    `json:"target_user_id"`
 	QuotaAmount        int    `json:"quota_amount"`
 	InvoiceAmountCents int64  `json:"invoice_amount_cents"`
+	PaymentStatus      string `json:"payment_status"`
+	IsTestAmount       bool   `json:"is_test_amount"`
+	InvoiceRequired    bool   `json:"invoice_required"`
 	ApplicationInfo    string `json:"application_info"`
 	Attachments        []model.QuotaApplicationAttachment `json:"attachments"`
 }
@@ -94,6 +97,10 @@ func quotaApplicationAttachmentKey(c *gin.Context, fileName string) string {
 type reviewQuotaApplicationRequest struct {
 	Approved bool   `json:"approved"`
 	Comment  string `json:"comment"`
+	PaymentStatus string `json:"payment_status"`
+	IsTestAmount bool `json:"is_test_amount"`
+	InvoiceRequired bool `json:"invoice_required"`
+	InvoiceAmountCents int64 `json:"invoice_amount_cents"`
 }
 
 func quotaApplicationScope(c *gin.Context) *int {
@@ -114,6 +121,9 @@ func ListQuotaApplications(c *gin.Context) {
 	items, total, err := model.ListQuotaApplications(
 		quotaApplicationScope(c),
 		status,
+		strings.TrimSpace(c.Query("payment_status")),
+		strings.TrimSpace(c.Query("test_amount")),
+		strings.TrimSpace(c.Query("invoice_required")),
 		strings.TrimSpace(c.Query("keyword")),
 		pageInfo.GetStartIdx(),
 		pageInfo.GetPageSize(),
@@ -176,6 +186,9 @@ func CreateQuotaApplication(c *gin.Context) {
 		TargetUserId:       req.TargetUserId,
 		QuotaAmount:        req.QuotaAmount,
 		InvoiceAmountCents: req.InvoiceAmountCents,
+		PaymentStatus: req.PaymentStatus,
+		IsTestAmount: req.IsTestAmount,
+		InvoiceRequired: req.InvoiceRequired,
 		ApplicationInfo:    req.ApplicationInfo,
 	}
 	if len(req.Attachments) > 3 { common.ApiErrorMsg(c, "at most 3 attachments are allowed"); return }
@@ -187,9 +200,13 @@ func CreateQuotaApplication(c *gin.Context) {
 		return
 	}
 	for i := range req.Attachments { req.Attachments[i].ApplicationId = application.Id; req.Attachments[i].Id = 0; if err := model.DB.Create(&req.Attachments[i]).Error; err != nil { common.ApiError(c, err); return } }
+	auditApplication, _ := model.GetQuotaApplication(application.Id, nil)
+	targetUsername := ""
+	if auditApplication != nil { targetUsername = auditApplication.TargetUsername }
 	recordManageAuditFor(c, application.TargetUserId, "quota_application.create", map[string]interface{}{
 		"application_id": application.Id,
 		"quota":          application.QuotaAmount,
+		"target_username": targetUsername,
 	})
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": application})
 }
@@ -214,7 +231,8 @@ func ReviewQuotaApplication(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	application, err := model.ReviewQuotaApplication(id, c.GetInt("id"), req.Approved, req.Comment)
+	if req.PaymentStatus == "" { req.PaymentStatus = "unpaid" }
+	application, err := model.ReviewQuotaApplicationWithAccounting(id, c.GetInt("id"), req.Approved, req.Comment, req.PaymentStatus, req.IsTestAmount, req.InvoiceRequired, req.InvoiceAmountCents)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -224,10 +242,28 @@ func ReviewQuotaApplication(c *gin.Context) {
 			common.SysLog("failed to invalidate user cache after quota application approval: " + err.Error())
 		}
 	}
+	auditApplication, _ := model.GetQuotaApplication(application.Id, nil)
+	targetUsername := ""
+	if auditApplication != nil { targetUsername = auditApplication.TargetUsername }
 	recordManageAuditFor(c, application.TargetUserId, "quota_application.review", map[string]interface{}{
 		"application_id": application.Id,
 		"approved":       req.Approved,
 		"quota":          application.QuotaAmount,
+		"target_username": targetUsername,
 	})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": application})
+}
+
+func UpdateQuotaApplicationAccounting(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id")); if err != nil { common.ApiError(c, err); return }
+	var req struct { PaymentStatus string `json:"payment_status"`; IsTestAmount bool `json:"is_test_amount"`; InvoiceRequired bool `json:"invoice_required"`; InvoiceAmountCents int64 `json:"invoice_amount_cents"` }
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil { common.ApiError(c, err); return }
+	if req.PaymentStatus == "" { req.PaymentStatus = "unpaid" }
+	application, err := model.UpdateQuotaApplicationAccounting(id, req.PaymentStatus, req.IsTestAmount, req.InvoiceRequired, req.InvoiceAmountCents)
+	if err != nil { common.ApiError(c, err); return }
+	if application == nil { common.ApiErrorMsg(c, "quota application not found"); return }
+	config := service.QuotaApplicationR2ConfigFromOptions()
+	for i := range application.Attachments { application.Attachments[i].PublicURL = service.R2ObjectURL(config, application.Attachments[i].ObjectKey) }
+	recordManageAuditFor(c, application.TargetUserId, "quota_application.accounting.update", map[string]interface{}{"application_id": application.Id, "target_username": application.TargetUsername, "payment_status": application.PaymentStatus, "is_test_amount": application.IsTestAmount, "invoice_required": application.InvoiceRequired, "invoice_amount_cents": application.InvoiceAmountCents})
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": application})
 }

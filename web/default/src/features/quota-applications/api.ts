@@ -28,6 +28,9 @@ import type {
 
 export async function listQuotaApplications(params: {
   status?: string
+  paymentStatus?: string
+  testAmount?: string
+  invoiceRequired?: string
   keyword?: string
   page?: number
   pageSize?: number
@@ -35,6 +38,9 @@ export async function listQuotaApplications(params: {
   const res = await api.get('/api/quota-applications', {
     params: {
       status: params.status || undefined,
+      payment_status: params.paymentStatus || undefined,
+      test_amount: params.testAmount || undefined,
+      invoice_required: params.invoiceRequired || undefined,
       keyword: params.keyword || undefined,
       p: params.page ?? 1,
       page_size: params.pageSize ?? 20,
@@ -74,8 +80,15 @@ export async function createQuotaApplication(
 }
 
 export async function presignQuotaApplicationAttachment(file: File) {
-  const res = await api.post('/api/quota-applications/attachments/presign', { file_name: file.name, content_type: file.type })
-  return res.data.data as { object_key: string; upload_url: string; public_url: string }
+  const res = await api.post('/api/quota-applications/attachments/presign', {
+    file_name: file.name,
+    content_type: file.type,
+  })
+  return res.data.data as {
+    object_key: string
+    upload_url: string
+    public_url: string
+  }
 }
 
 export async function uploadQuotaApplicationAttachment(file: File) {
@@ -85,18 +98,44 @@ export async function uploadQuotaApplicationAttachment(file: File) {
   if (!res.data?.success || !res.data?.data) {
     throw new Error(res.data?.message || 'Attachment upload failed')
   }
-  return res.data.data as { object_key: string; file_name: string; content_type: string; file_size: number; public_url: string }
+  return res.data.data as {
+    object_key: string
+    file_name: string
+    content_type: string
+    file_size: number
+    public_url: string
+  }
 }
 
 export async function reviewQuotaApplication(
   id: number,
   approved: boolean,
-  comment: string
+  comment: string,
+  accounting?: {
+    payment_status: string
+    is_test_amount: boolean
+    invoice_required: boolean
+    invoice_amount_cents: number
+  }
 ): Promise<{ success: boolean; message?: string; data?: QuotaApplication }> {
   return (
     await api.post(`/api/quota-applications/${id}/review`, {
       approved,
       comment,
+      ...accounting,
     })
   ).data
+}
+
+export async function updateQuotaApplicationAccounting(
+  id: number,
+  accounting: {
+    payment_status: string
+    is_test_amount: boolean
+    invoice_required: boolean
+    invoice_amount_cents: number
+  }
+) {
+  return (await api.put(`/api/quota-applications/${id}/accounting`, accounting))
+    .data
 }

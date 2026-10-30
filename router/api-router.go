@@ -179,6 +179,7 @@ func SetApiRouter(router *gin.Engine) {
 			quotaApplicationRoute.GET("/:id", middleware.RequirePermission(authz.QuotaApplicationApply), controller.GetQuotaApplication)
 			quotaApplicationRoute.POST("", middleware.RequirePermission(authz.QuotaApplicationApply), controller.CreateQuotaApplication)
 			quotaApplicationRoute.POST("/:id/review", middleware.RootAuth(), controller.ReviewQuotaApplication)
+			quotaApplicationRoute.PUT("/:id/accounting", middleware.RootAuth(), controller.UpdateQuotaApplicationAccounting)
 		}
 
 		// Subscription billing (plans, purchase, admin management)

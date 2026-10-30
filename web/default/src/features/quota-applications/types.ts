@@ -27,6 +27,9 @@ export interface QuotaApplication {
   target_display_name: string
   quota_amount: number
   invoice_amount_cents: number
+  payment_status: 'paid' | 'unpaid'
+  is_test_amount: boolean
+  invoice_required: boolean
   application_info: string
   status: QuotaApplicationStatus
   reviewed_by: number
@@ -40,7 +43,14 @@ export interface QuotaApplication {
   attachments?: QuotaApplicationAttachment[]
 }
 
-export interface QuotaApplicationAttachment { id: number; object_key: string; file_name: string; content_type: string; file_size: number; public_url?: string }
+export interface QuotaApplicationAttachment {
+  id: number
+  object_key: string
+  file_name: string
+  content_type: string
+  file_size: number
+  public_url?: string
+}
 
 export interface QuotaApplicationTarget {
   id: number
@@ -62,12 +72,25 @@ export interface QuotaApplicationSalesSummary {
   quota_amount: number
   application_count: number
   customer_count: number
+  invoice_amount_cents: number
+  invoice_count: number
+  paid_quota: number
+  unpaid_quota: number
+  unpaid_count: number
+  test_quota: number
+  test_count: number
 }
 
 export interface QuotaApplicationSummary {
   quota_amount: number
   application_count: number
   customer_count: number
+  invoice_amount_cents: number
+  paid_quota: number
+  unpaid_quota: number
+  unpaid_count: number
+  test_quota: number
+  test_count: number
   pending_quota: number
   pending_count: number
   rejected_quota: number
@@ -80,6 +103,9 @@ export interface CreateQuotaApplicationPayload {
   target_user_id: number
   quota_amount: number
   invoice_amount_cents: number
+  payment_status: 'paid' | 'unpaid'
+  is_test_amount: boolean
+  invoice_required: boolean
   application_info: string
   attachments?: Omit<QuotaApplicationAttachment, 'id'>[]
 }

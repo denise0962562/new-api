@@ -23,6 +23,7 @@ import {
   parseTiersFromExpr,
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
+import { formatQuota } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
@@ -384,6 +385,12 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'subscription.plan_create': 'Created a subscription plan',
   'subscription.plan_update': 'Updated a subscription plan',
   'subscription.bind': 'Bound a subscription',
+  'quota_application.create':
+    'Created quota application #{{application_id}} for {{target}}, amount {{quota_display}}',
+  'quota_application.review':
+    'Reviewed quota application #{{application_id}} for {{target}}: {{result}}, amount {{quota_display}}',
+  'quota_application.accounting.update':
+    'Updated accounting information for quota application #{{application_id}} for {{target}}',
   // Logs
   'log.clear': 'Cleared historical logs',
   // Generic middleware fallback
@@ -403,5 +410,19 @@ export function renderAuditContent(
   if (!op?.action) return null
   const template = AUDIT_TEMPLATES[op.action]
   if (!template) return null
-  return t(template, (op.params ?? {}) as Record<string, unknown>)
+  const params = { ...op.params } as Record<string, unknown>
+  if (op.action.startsWith('quota_application.')) {
+    const targetId = params.target_user_id
+    const targetUsername = String(params.target_username ?? '').trim()
+    params.target = targetUsername
+      ? `${targetUsername} (ID: ${targetId})`
+      : `ID ${targetId}`
+    if (typeof params.quota === 'number') {
+      params.quota_display = formatQuota(params.quota)
+    }
+    if (op.action === 'quota_application.review') {
+      params.result = t(params.approved === true ? 'Approved' : 'Rejected')
+    }
+  }
+  return t(template, params)
 }

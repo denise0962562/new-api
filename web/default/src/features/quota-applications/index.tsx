@@ -44,6 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import {
   Table,
   TableBody,
@@ -68,6 +69,7 @@ import {
   getQuotaApplicationSummary,
   listQuotaApplications,
   reviewQuotaApplication,
+  updateQuotaApplicationAccounting,
   searchQuotaApplicationTargets,
 } from './api'
 import type {
@@ -134,6 +136,12 @@ function ReconciliationView(props: { isRoot: boolean }) {
         rejected_count: 0,
         sales: [],
         applications: [],
+        invoice_amount_cents: 0,
+        paid_quota: 0,
+        unpaid_quota: 0,
+        unpaid_count: 0,
+        test_quota: 0,
+        test_count: 0,
       }
   const selectedSales = props.isRoot ? summary.sales : []
   return (
@@ -196,6 +204,13 @@ function ReconciliationView(props: { isRoot: boolean }) {
           [t('Applications'), summary.application_count],
           [t('Pending quota'), formatQuota(summary.pending_quota)],
           [t('Rejected quota'), formatQuota(summary.rejected_quota)],
+          [t('Paid quota'), formatQuota(summary.paid_quota)],
+          [t('Unpaid quota'), formatQuota(summary.unpaid_quota)],
+          [
+            t('Invoice amount (CNY)'),
+            `CNY ${(summary.invoice_amount_cents / 100).toFixed(2)}`,
+          ],
+          [t('Test quota'), formatQuota(summary.test_quota)],
         ].map(([label, value]) => (
           <div key={String(label)} className='rounded-lg border p-4'>
             <p className='text-muted-foreground text-xs'>{label}</p>
@@ -214,6 +229,10 @@ function ReconciliationView(props: { isRoot: boolean }) {
                 <TableHead>{t('Credited quota')}</TableHead>
                 <TableHead>{t('Customers')}</TableHead>
                 <TableHead>{t('Applications')}</TableHead>
+                <TableHead>{t('Paid quota')}</TableHead>
+                <TableHead>{t('Unpaid quota')}</TableHead>
+                <TableHead>{t('Invoice amount (CNY)')}</TableHead>
+                <TableHead>{t('Test quota')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -223,6 +242,12 @@ function ReconciliationView(props: { isRoot: boolean }) {
                   <TableCell>{formatQuota(sale.quota_amount)}</TableCell>
                   <TableCell>{sale.customer_count}</TableCell>
                   <TableCell>{sale.application_count}</TableCell>
+                  <TableCell>{formatQuota(sale.paid_quota)}</TableCell>
+                  <TableCell>{formatQuota(sale.unpaid_quota)}</TableCell>
+                  <TableCell>
+                    CNY {(sale.invoice_amount_cents / 100).toFixed(2)}
+                  </TableCell>
+                  <TableCell>{formatQuota(sale.test_quota)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -238,6 +263,9 @@ function ReconciliationView(props: { isRoot: boolean }) {
               </TableHead>
               {props.isRoot && <TableHead>{t('Target user')}</TableHead>}
               <TableHead>{t('Credit amount')}</TableHead>
+              <TableHead>{t('Payment status')}</TableHead>
+              <TableHead>{t('Invoice amount (CNY)')}</TableHead>
+              <TableHead>{t('Amount type')}</TableHead>
               <TableHead>{t('Status')}</TableHead>
               <TableHead>{t('Submitted at')}</TableHead>
               <TableHead>{t('Reviewed at')}</TableHead>
@@ -266,6 +294,19 @@ function ReconciliationView(props: { isRoot: boolean }) {
                   )}
                   <TableCell className='font-medium'>
                     {formatQuota(item.quota_amount)}
+                  </TableCell>
+                  <TableCell>
+                    {t(item.payment_status === 'paid' ? 'Paid' : 'Unpaid')}
+                  </TableCell>
+                  <TableCell>
+                    {item.invoice_required || item.invoice_amount_cents > 0
+                      ? `CNY ${(item.invoice_amount_cents / 100).toFixed(2)}`
+                      : t('No invoice required')}
+                  </TableCell>
+                  <TableCell>
+                    {item.is_test_amount
+                      ? t('Test amount')
+                      : t('Formal amount')}
                   </TableCell>
                   <TableCell>
                     <ApplicationStatusBadge status={item.status} />
@@ -344,11 +385,25 @@ function ApplicationDetails(props: {
               <p className='font-medium'>{formatQuota(item.quota_amount)}</p>
             </div>
             <div>
+              <p className='text-muted-foreground'>{t('Payment status')}</p>
+              <p className='font-medium'>
+                {t(item.payment_status === 'paid' ? 'Paid' : 'Unpaid')}
+              </p>
+            </div>
+            <div>
               <p className='text-muted-foreground'>
-                {t('Actual invoiceable amount received (CNY)')}
+                {t('Invoice amount (CNY)')}
               </p>
               <p className='font-medium'>
-                CNY {(item.invoice_amount_cents / 100).toFixed(2)}
+                {item.invoice_required || item.invoice_amount_cents > 0
+                  ? `CNY ${(item.invoice_amount_cents / 100).toFixed(2)}`
+                  : t('No invoice required')}
+              </p>
+            </div>
+            <div>
+              <p className='text-muted-foreground'>{t('Amount type')}</p>
+              <p className='font-medium'>
+                {item.is_test_amount ? t('Test amount') : t('Formal amount')}
               </p>
             </div>
             <div>
@@ -426,6 +481,11 @@ function CreateApplicationDialog(props: {
     useState<QuotaApplicationTarget | null>(null)
   const [amount, setAmount] = useState('')
   const [invoiceAmount, setInvoiceAmount] = useState('')
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'unpaid'>(
+    'unpaid'
+  )
+  const [isTestAmount, setIsTestAmount] = useState(false)
+  const [invoiceRequired, setInvoiceRequired] = useState(false)
   const [applicationInfo, setApplicationInfo] = useState('')
   const [attachments, setAttachments] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -443,6 +503,9 @@ function CreateApplicationDialog(props: {
     setSelectedUser(null)
     setAmount('')
     setInvoiceAmount('')
+    setPaymentStatus('unpaid')
+    setIsTestAmount(false)
+    setInvoiceRequired(false)
     setApplicationInfo('')
     setAttachments([])
   }
@@ -461,8 +524,8 @@ function CreateApplicationDialog(props: {
       toast.error(t('Enter a valid credit amount'))
       return
     }
-    if (invoiceAmountCents < 0) {
-      toast.error(t('Invoiceable CNY amount cannot be negative.'))
+    if (invoiceRequired && invoiceAmountCents <= 0) {
+      toast.error(t('Enter a valid invoice amount'))
       return
     }
     if (!applicationInfo.trim()) {
@@ -479,6 +542,9 @@ function CreateApplicationDialog(props: {
         target_user_id: selectedUser.id,
         quota_amount: quotaAmount,
         invoice_amount_cents: invoiceAmountCents,
+        payment_status: paymentStatus,
+        is_test_amount: isTestAmount,
+        invoice_required: invoiceRequired,
         application_info: applicationInfo.trim(),
         attachments: uploaded,
       })
@@ -595,6 +661,45 @@ function CreateApplicationDialog(props: {
           ) : null}
         </div>
 
+        <div className='grid gap-4 sm:grid-cols-3'>
+          <div className='space-y-2'>
+            <Label>{t('Payment status')}</Label>
+            <Select
+              value={paymentStatus}
+              onValueChange={(value) =>
+                value && setPaymentStatus(value as 'paid' | 'unpaid')
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='unpaid'>{t('Unpaid')}</SelectItem>
+                <SelectItem value='paid'>{t('Paid')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className='space-y-2'>
+            <Label>{t('Invoice requirement')}</Label>
+            <Select
+              value={invoiceRequired ? 'yes' : 'no'}
+              onValueChange={(value) => setInvoiceRequired(value === 'yes')}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='no'>{t('No invoice required')}</SelectItem>
+                <SelectItem value='yes'>{t('Invoice required')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className='flex items-center justify-between rounded-md border p-3'>
+            <Label>{t('Test amount')}</Label>
+            <Switch checked={isTestAmount} onCheckedChange={setIsTestAmount} />
+          </div>
+        </div>
+
         <div className='space-y-2'>
           <Label>{t('Supporting screenshots (optional)')}</Label>
           <Input
@@ -646,18 +751,17 @@ function CreateApplicationDialog(props: {
             />
           </div>
           <div className='space-y-2'>
-            <Label>{t('Actual invoiceable amount received (CNY)')}</Label>
+            <Label>{t('Invoice amount (CNY)')}</Label>
             <Input
               type='number'
               min={0}
               step={0.01}
               value={invoiceAmount}
+              disabled={!invoiceRequired}
               onChange={(event) => setInvoiceAmount(event.target.value)}
             />
             <p className='text-muted-foreground text-xs'>
-              {t(
-                'Enter 0 when this quota application should not increase the customer invoice balance.'
-              )}
+              {t('Enter the amount that should be invoiced to the customer.')}
             </p>
           </div>
         </div>
@@ -691,6 +795,9 @@ export function QuotaApplications() {
     'applications'
   )
   const [status, setStatus] = useState('all')
+  const [paymentFilter, setPaymentFilter] = useState('all')
+  const [testFilter, setTestFilter] = useState('all')
+  const [invoiceFilter, setInvoiceFilter] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
@@ -699,13 +806,33 @@ export function QuotaApplications() {
   const [reviewing, setReviewing] = useState<QuotaApplication | null>(null)
   const [approved, setApproved] = useState(true)
   const [reviewComment, setReviewComment] = useState('')
+  const [reviewPaymentStatus, setReviewPaymentStatus] = useState<
+    'paid' | 'unpaid'
+  >('unpaid')
+  const [reviewTestAmount, setReviewTestAmount] = useState(false)
+  const [reviewInvoiceRequired, setReviewInvoiceRequired] = useState(false)
+  const [reviewInvoiceAmount, setReviewInvoiceAmount] = useState('')
   const [reviewingBusy, setReviewingBusy] = useState(false)
+  const [accountingEdit, setAccountingEdit] = useState<QuotaApplication | null>(
+    null
+  )
   const pageSize = 20
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['quota-applications', status, keyword, page],
+    queryKey: [
+      'quota-applications',
+      status,
+      paymentFilter,
+      testFilter,
+      invoiceFilter,
+      keyword,
+      page,
+    ],
     queryFn: () =>
       listQuotaApplications({
         status: status === 'all' ? '' : status,
+        paymentStatus: paymentFilter === 'all' ? '' : paymentFilter,
+        testAmount: testFilter === 'all' ? '' : testFilter,
+        invoiceRequired: invoiceFilter === 'all' ? '' : invoiceFilter,
         keyword,
         page,
         pageSize,
@@ -725,6 +852,46 @@ export function QuotaApplications() {
     setReviewing(item)
     setApproved(shouldApprove)
     setReviewComment('')
+    setReviewPaymentStatus(item.payment_status || 'unpaid')
+    setReviewTestAmount(Boolean(item.is_test_amount))
+    setReviewInvoiceRequired(
+      Boolean(item.invoice_required || item.invoice_amount_cents > 0)
+    )
+    setReviewInvoiceAmount(((item.invoice_amount_cents || 0) / 100).toFixed(2))
+  }
+  const openAccountingEdit = (item: QuotaApplication) => {
+    setAccountingEdit(item)
+    setReviewPaymentStatus(item.payment_status || 'unpaid')
+    setReviewTestAmount(Boolean(item.is_test_amount))
+    setReviewInvoiceRequired(
+      Boolean(item.invoice_required || item.invoice_amount_cents > 0)
+    )
+    setReviewInvoiceAmount(((item.invoice_amount_cents || 0) / 100).toFixed(2))
+  }
+  const submitAccountingEdit = async () => {
+    if (!accountingEdit) return
+    setReviewingBusy(true)
+    try {
+      const result = await updateQuotaApplicationAccounting(accountingEdit.id, {
+        payment_status: reviewPaymentStatus,
+        is_test_amount: reviewTestAmount,
+        invoice_required: reviewInvoiceRequired,
+        invoice_amount_cents: Math.round(
+          Number(reviewInvoiceAmount || 0) * 100
+        ),
+      })
+      if (result.success) {
+        toast.success(t('Accounting information updated'))
+        setAccountingEdit(null)
+        refresh()
+      } else {
+        toast.error(
+          result.message || t('Failed to update accounting information')
+        )
+      }
+    } finally {
+      setReviewingBusy(false)
+    }
   }
   const submitReview = async () => {
     if (!reviewing) return
@@ -737,7 +904,15 @@ export function QuotaApplications() {
       const result = await reviewQuotaApplication(
         reviewing.id,
         approved,
-        reviewComment.trim()
+        reviewComment.trim(),
+        {
+          payment_status: reviewPaymentStatus,
+          is_test_amount: reviewTestAmount,
+          invoice_required: reviewInvoiceRequired,
+          invoice_amount_cents: Math.round(
+            Number(reviewInvoiceAmount || 0) * 100
+          ),
+        }
       )
       if (result.success) {
         toast.success(
@@ -810,6 +985,68 @@ export function QuotaApplications() {
                     <SelectItem value='rejected'>{t('Rejected')}</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select
+                  value={paymentFilter}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setPaymentFilter(value)
+                      setPage(1)
+                    }
+                  }}
+                >
+                  <SelectTrigger className='w-full sm:w-36'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>
+                      {t('All payment statuses')}
+                    </SelectItem>
+                    <SelectItem value='paid'>{t('Paid')}</SelectItem>
+                    <SelectItem value='unpaid'>{t('Unpaid')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={testFilter}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setTestFilter(value)
+                      setPage(1)
+                    }
+                  }}
+                >
+                  <SelectTrigger className='w-full sm:w-36'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>{t('All amount types')}</SelectItem>
+                    <SelectItem value='false'>{t('Formal amount')}</SelectItem>
+                    <SelectItem value='true'>{t('Test amount')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={invoiceFilter}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setInvoiceFilter(value)
+                      setPage(1)
+                    }
+                  }}
+                >
+                  <SelectTrigger className='w-full sm:w-40'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>
+                      {t('All invoice statuses')}
+                    </SelectItem>
+                    <SelectItem value='true'>
+                      {t('Invoice required')}
+                    </SelectItem>
+                    <SelectItem value='false'>
+                      {t('No invoice required')}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
                 <div className='flex w-full max-w-md gap-2'>
                   <Input
                     value={searchInput}
@@ -844,6 +1081,9 @@ export function QuotaApplications() {
                       {isRoot && <TableHead>{t('Applicant')}</TableHead>}
                       <TableHead>{t('Target user')}</TableHead>
                       <TableHead>{t('Credit amount')}</TableHead>
+                      <TableHead>{t('Payment status')}</TableHead>
+                      <TableHead>{t('Invoice amount (CNY)')}</TableHead>
+                      <TableHead>{t('Amount type')}</TableHead>
                       <TableHead>{t('Submitted at')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
                       <TableHead className='text-right'>
@@ -888,6 +1128,22 @@ export function QuotaApplications() {
                           {formatQuota(item.quota_amount)}
                         </TableCell>
                         <TableCell>
+                          {t(
+                            item.payment_status === 'paid' ? 'Paid' : 'Unpaid'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {item.invoice_required ||
+                          item.invoice_amount_cents > 0
+                            ? `CNY ${(item.invoice_amount_cents / 100).toFixed(2)}`
+                            : t('No invoice required')}
+                        </TableCell>
+                        <TableCell>
+                          {item.is_test_amount
+                            ? t('Test amount')
+                            : t('Formal amount')}
+                        </TableCell>
+                        <TableCell>
                           {formatTimestamp(item.created_at)}
                         </TableCell>
                         <TableCell>
@@ -903,6 +1159,16 @@ export function QuotaApplications() {
                             >
                               <Eye />
                             </Button>
+                            {isRoot && item.status === 'approved' && (
+                              <Button
+                                variant='ghost'
+                                size='icon'
+                                title={t('Edit accounting information')}
+                                onClick={() => openAccountingEdit(item)}
+                              >
+                                ✎
+                              </Button>
+                            )}
                             {isRoot && item.status === 'pending' && (
                               <>
                                 <Button
@@ -999,6 +1265,15 @@ export function QuotaApplications() {
                         <Eye />
                         {t('View details')}
                       </Button>
+                      {isRoot && item.status === 'approved' && (
+                        <Button
+                          variant='ghost'
+                          size='sm'
+                          onClick={() => openAccountingEdit(item)}
+                        >
+                          {t('Edit accounting information')}
+                        </Button>
+                      )}
                       {isRoot && item.status === 'pending' && (
                         <>
                           <Button
@@ -1095,6 +1370,62 @@ export function QuotaApplications() {
           }
         >
           <div className='space-y-2'>
+            <div className='grid gap-4 sm:grid-cols-3'>
+              <div>
+                <Label>{t('Payment status')}</Label>
+                <Select
+                  value={reviewPaymentStatus}
+                  onValueChange={(value) =>
+                    value && setReviewPaymentStatus(value as 'paid' | 'unpaid')
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='unpaid'>{t('Unpaid')}</SelectItem>
+                    <SelectItem value='paid'>{t('Paid')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('Invoice requirement')}</Label>
+                <Select
+                  value={reviewInvoiceRequired ? 'yes' : 'no'}
+                  onValueChange={(value) =>
+                    setReviewInvoiceRequired(value === 'yes')
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='no'>
+                      {t('No invoice required')}
+                    </SelectItem>
+                    <SelectItem value='yes'>{t('Invoice required')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='flex items-center justify-between rounded-md border p-3'>
+                <Label>{t('Test amount')}</Label>
+                <Switch
+                  checked={reviewTestAmount}
+                  onCheckedChange={setReviewTestAmount}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>{t('Invoice amount (CNY)')}</Label>
+              <Input
+                type='number'
+                min={0}
+                step={0.01}
+                disabled={!reviewInvoiceRequired}
+                value={reviewInvoiceAmount}
+                onChange={(event) => setReviewInvoiceAmount(event.target.value)}
+              />
+            </div>
             <Label>
               {approved ? t('Review comment') : t('Rejection reason')}
             </Label>
@@ -1104,6 +1435,81 @@ export function QuotaApplications() {
               value={reviewComment}
               onChange={(event) => setReviewComment(event.target.value)}
             />
+          </div>
+        </Dialog>
+        <Dialog
+          open={accountingEdit !== null}
+          onOpenChange={(open) => !open && setAccountingEdit(null)}
+          title={t('Edit accounting information')}
+          contentHeight='auto'
+          footer={
+            <>
+              <Button variant='outline' onClick={() => setAccountingEdit(null)}>
+                {t('Cancel')}
+              </Button>
+              <Button disabled={reviewingBusy} onClick={submitAccountingEdit}>
+                {t('Save')}
+              </Button>
+            </>
+          }
+        >
+          <div className='space-y-3'>
+            <div className='grid gap-4 sm:grid-cols-3'>
+              <div>
+                <Label>{t('Payment status')}</Label>
+                <Select
+                  value={reviewPaymentStatus}
+                  onValueChange={(value) =>
+                    value && setReviewPaymentStatus(value as 'paid' | 'unpaid')
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='unpaid'>{t('Unpaid')}</SelectItem>
+                    <SelectItem value='paid'>{t('Paid')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>{t('Invoice requirement')}</Label>
+                <Select
+                  value={reviewInvoiceRequired ? 'yes' : 'no'}
+                  onValueChange={(value) =>
+                    setReviewInvoiceRequired(value === 'yes')
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='no'>
+                      {t('No invoice required')}
+                    </SelectItem>
+                    <SelectItem value='yes'>{t('Invoice required')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className='flex items-center justify-between rounded-md border p-3'>
+                <Label>{t('Test amount')}</Label>
+                <Switch
+                  checked={reviewTestAmount}
+                  onCheckedChange={setReviewTestAmount}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>{t('Invoice amount (CNY)')}</Label>
+              <Input
+                type='number'
+                min={0}
+                step={0.01}
+                disabled={!reviewInvoiceRequired}
+                value={reviewInvoiceAmount}
+                onChange={(event) => setReviewInvoiceAmount(event.target.value)}
+              />
+            </div>
           </div>
         </Dialog>
       </SectionPageLayout.Content>

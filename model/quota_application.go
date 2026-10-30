@@ -24,6 +24,9 @@ type QuotaApplication struct {
 	TargetDisplayName  string `json:"target_display_name" gorm:"->;-:migration"`
 	QuotaAmount        int    `json:"quota_amount" gorm:"not null"`
 	InvoiceAmountCents int64  `json:"invoice_amount_cents" gorm:"not null"`
+	PaymentStatus      string `json:"payment_status" gorm:"type:varchar(16);index;not null;default:unpaid"`
+	IsTestAmount       bool   `json:"is_test_amount" gorm:"index;not null;default:false"`
+	InvoiceRequired    bool   `json:"invoice_required" gorm:"index;not null;default:false"`
 	ApplicationInfo    string `json:"application_info" gorm:"type:text;not null"`
 	Status             string `json:"status" gorm:"type:varchar(16);index;not null"`
 	ReviewedBy         int    `json:"reviewed_by" gorm:"index"`
@@ -50,6 +53,12 @@ type QuotaApplicationSalesSummary struct {
 	QuotaAmount       int64  `json:"quota_amount"`
 	ApplicationCount  int64  `json:"application_count"`
 	CustomerCount     int64  `json:"customer_count"`
+	InvoiceAmount     int64  `json:"invoice_amount_cents"`
+	PaidQuota         int64  `json:"paid_quota"`
+	UnpaidQuota       int64  `json:"unpaid_quota"`
+	UnpaidCount       int64  `json:"unpaid_count"`
+	TestQuota         int64  `json:"test_quota"`
+	TestCount         int64  `json:"test_count"`
 }
 
 type QuotaApplicationSummary struct {
@@ -60,6 +69,13 @@ type QuotaApplicationSummary struct {
 	PendingCount      int64                         `json:"pending_count"`
 	RejectedQuota     int64                         `json:"rejected_quota"`
 	RejectedCount     int64                         `json:"rejected_count"`
+	InvoiceAmount     int64                         `json:"invoice_amount_cents"`
+	InvoiceCount      int64                         `json:"invoice_count"`
+	PaidQuota         int64                         `json:"paid_quota"`
+	UnpaidQuota       int64                         `json:"unpaid_quota"`
+	UnpaidCount       int64                         `json:"unpaid_count"`
+	TestQuota         int64                         `json:"test_quota"`
+	TestCount         int64                         `json:"test_count"`
 	Sales             []QuotaApplicationSalesSummary `json:"sales" gorm:"-"`
 	Applications      []QuotaApplication             `json:"applications" gorm:"-"`
 }
@@ -80,7 +96,7 @@ func GetQuotaApplicationSummary(applicantId *int, from, to int64) (*QuotaApplica
 	base = base.Where(period, args...)
 
 	var result QuotaApplicationSummary
-	if err := base.Select("COALESCE(SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END), 0) AS quota_amount, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS application_count, SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END) AS pending_quota, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END) AS rejected_quota, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS rejected_count", QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusPending, QuotaApplicationStatusPending, QuotaApplicationStatusRejected, QuotaApplicationStatusRejected).Scan(&result).Error; err != nil {
+	if err := base.Select("COALESCE(SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 THEN qa.quota_amount ELSE 0 END), 0) AS quota_amount, SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 THEN 1 ELSE 0 END) AS application_count, SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END) AS pending_quota, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END) AS rejected_quota, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS rejected_count, COALESCE(SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 AND (COALESCE(qa.invoice_required, 0) = 1 OR qa.invoice_amount_cents > 0) THEN qa.invoice_amount_cents ELSE 0 END), 0) AS invoice_amount, SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 AND (COALESCE(qa.invoice_required, 0) = 1 OR qa.invoice_amount_cents > 0) THEN 1 ELSE 0 END) AS invoice_count, COALESCE(SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 AND qa.payment_status = 'paid' THEN qa.quota_amount ELSE 0 END), 0) AS paid_quota, COALESCE(SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 AND qa.payment_status = 'unpaid' THEN qa.quota_amount ELSE 0 END), 0) AS unpaid_quota, SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 0 AND qa.payment_status = 'unpaid' THEN 1 ELSE 0 END) AS unpaid_count, COALESCE(SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 1 THEN qa.quota_amount ELSE 0 END), 0) AS test_quota, SUM(CASE WHEN qa.status = ? AND COALESCE(qa.is_test_amount, 0) = 1 THEN 1 ELSE 0 END) AS test_count", QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusPending, QuotaApplicationStatusPending, QuotaApplicationStatusRejected, QuotaApplicationStatusRejected, QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusApproved).Scan(&result).Error; err != nil {
 		return nil, err
 	}
 	var customerCount int64
@@ -91,7 +107,7 @@ func GetQuotaApplicationSummary(applicantId *int, from, to int64) (*QuotaApplica
 	result.CustomerCount = customerCount
 
 	salesQuery := base.Where("qa.status = ?", QuotaApplicationStatusApproved).
-		Select("qa.applicant_id, applicant.username AS applicant_username, COALESCE(SUM(qa.quota_amount), 0) AS quota_amount, COUNT(*) AS application_count, COUNT(DISTINCT qa.target_user_id) AS customer_count").
+		Select("qa.applicant_id, applicant.username AS applicant_username, COALESCE(SUM(CASE WHEN COALESCE(qa.is_test_amount, 0) = 0 THEN qa.quota_amount ELSE 0 END), 0) AS quota_amount, COUNT(CASE WHEN COALESCE(qa.is_test_amount, 0) = 0 THEN 1 END) AS application_count, COUNT(DISTINCT qa.target_user_id) AS customer_count, COALESCE(SUM(CASE WHEN COALESCE(qa.is_test_amount, 0) = 0 AND qa.payment_status = 'paid' THEN qa.quota_amount ELSE 0 END), 0) AS paid_quota, COALESCE(SUM(CASE WHEN COALESCE(qa.is_test_amount, 0) = 0 AND qa.payment_status = 'unpaid' THEN qa.quota_amount ELSE 0 END), 0) AS unpaid_quota, COUNT(CASE WHEN COALESCE(qa.is_test_amount, 0) = 0 AND qa.payment_status = 'unpaid' THEN 1 END) AS unpaid_count, COALESCE(SUM(CASE WHEN COALESCE(qa.is_test_amount, 0) = 1 THEN qa.quota_amount ELSE 0 END), 0) AS test_quota, COUNT(CASE WHEN COALESCE(qa.is_test_amount, 0) = 1 THEN 1 END) AS test_count, COALESCE(SUM(CASE WHEN COALESCE(qa.is_test_amount, 0) = 0 AND (COALESCE(qa.invoice_required, 0) = 1 OR qa.invoice_amount_cents > 0) THEN qa.invoice_amount_cents ELSE 0 END), 0) AS invoice_amount").
 		Joins("LEFT JOIN users AS applicant ON applicant.id = qa.applicant_id").
 		Group("qa.applicant_id, applicant.username").Order("quota_amount DESC")
 	if err := salesQuery.Scan(&result.Sales).Error; err != nil {
@@ -124,6 +140,10 @@ func CreateQuotaApplication(application *QuotaApplication) error {
 	if application.InvoiceAmountCents < 0 {
 		return errors.New("invoiceable CNY amount cannot be negative")
 	}
+	if application.PaymentStatus == "" { application.PaymentStatus = "unpaid" }
+	if application.PaymentStatus != "paid" && application.PaymentStatus != "unpaid" { return errors.New("invalid payment status") }
+	if !application.InvoiceRequired { application.InvoiceAmountCents = 0 }
+	if application.InvoiceRequired && application.InvoiceAmountCents <= 0 { return errors.New("invoice amount must be positive when an invoice is required") }
 	if application.ApplicationInfo == "" || len(application.ApplicationInfo) > 2000 {
 		return errors.New("application information is required and must not exceed 2000 characters")
 	}
@@ -142,6 +162,17 @@ func CreateQuotaApplication(application *QuotaApplication) error {
 	application.QuotaBefore = 0
 	application.QuotaAfter = 0
 	return DB.Create(application).Error
+}
+
+func UpdateQuotaApplicationAccounting(id int, paymentStatus string, isTestAmount, invoiceRequired bool, invoiceAmountCents int64) (*QuotaApplication, error) {
+	if paymentStatus != "paid" && paymentStatus != "unpaid" { return nil, errors.New("invalid payment status") }
+	if invoiceAmountCents < 0 || (invoiceRequired && invoiceAmountCents <= 0) { return nil, errors.New("invalid invoice amount") }
+	if !invoiceRequired { invoiceAmountCents = 0 }
+	var current QuotaApplication
+	if err := DB.Where("id = ?", id).First(&current).Error; err != nil { return nil, err }
+	if current.Status != QuotaApplicationStatusApproved { return nil, errors.New("only approved applications can update accounting information") }
+	if err := DB.Model(&QuotaApplication{}).Where("id = ?", id).Updates(map[string]interface{}{"payment_status": paymentStatus, "is_test_amount": isTestAmount, "invoice_required": invoiceRequired, "invoice_amount_cents": invoiceAmountCents}).Error; err != nil { return nil, err }
+	return GetQuotaApplication(id, nil)
 }
 
 func SearchQuotaApplicationTargets(keyword string, limit int) ([]QuotaApplicationTarget, error) {
@@ -168,7 +199,7 @@ func SearchQuotaApplicationTargets(keyword string, limit int) ([]QuotaApplicatio
 	return users, err
 }
 
-func ListQuotaApplications(applicantId *int, status, keyword string, offset, limit int) ([]QuotaApplication, int64, error) {
+func ListQuotaApplications(applicantId *int, status, paymentStatus, testAmount, invoiceRequired, keyword string, offset, limit int) ([]QuotaApplication, int64, error) {
 	query := DB.Table("quota_applications AS qa").
 		Joins("LEFT JOIN users AS applicant ON applicant.id = qa.applicant_id").
 		Joins("LEFT JOIN users AS target ON target.id = qa.target_user_id").
@@ -179,6 +210,10 @@ func ListQuotaApplications(applicantId *int, status, keyword string, offset, lim
 	if status != "" {
 		query = query.Where("qa.status = ?", status)
 	}
+	if paymentStatus == "paid" || paymentStatus == "unpaid" { query = query.Where("qa.payment_status = ?", paymentStatus) }
+	if testAmount == "true" || testAmount == "false" { query = query.Where("qa.is_test_amount = ?", testAmount == "true") }
+	if invoiceRequired == "true" { query = query.Where("(qa.invoice_required = ? OR qa.invoice_amount_cents > 0)", true) }
+	if invoiceRequired == "false" { query = query.Where("qa.invoice_required = ? AND qa.invoice_amount_cents = 0", false) }
 	if keyword = strings.TrimSpace(keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("applicant.username LIKE ? OR target.username LIKE ? OR target.display_name LIKE ?", like, like, like)
@@ -217,6 +252,10 @@ func GetQuotaApplication(id int, applicantId *int) (*QuotaApplication, error) {
 }
 
 func ReviewQuotaApplication(id, reviewerId int, approved bool, comment string) (*QuotaApplication, error) {
+	return ReviewQuotaApplicationWithAccounting(id, reviewerId, approved, comment, "unpaid", false, false, 0)
+}
+
+func ReviewQuotaApplicationWithAccounting(id, reviewerId int, approved bool, comment, paymentStatus string, isTestAmount, invoiceRequired bool, invoiceAmountCents int64) (*QuotaApplication, error) {
 	comment = strings.TrimSpace(comment)
 	if !approved && comment == "" {
 		return nil, errors.New("rejection reason is required")
@@ -224,6 +263,9 @@ func ReviewQuotaApplication(id, reviewerId int, approved bool, comment string) (
 	if len(comment) > 500 {
 		return nil, errors.New("review comment must not exceed 500 characters")
 	}
+	if paymentStatus != "paid" && paymentStatus != "unpaid" { return nil, errors.New("invalid payment status") }
+	if invoiceAmountCents < 0 || (invoiceRequired && invoiceAmountCents <= 0) { return nil, errors.New("invalid invoice amount") }
+	if !invoiceRequired { invoiceAmountCents = 0 }
 
 	var reviewed QuotaApplication
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -240,6 +282,10 @@ func ReviewQuotaApplication(id, reviewerId int, approved bool, comment string) (
 			"reviewed_by":    reviewerId,
 			"reviewed_at":    now,
 			"review_comment": comment,
+			"payment_status": paymentStatus,
+			"is_test_amount": isTestAmount,
+			"invoice_required": invoiceRequired,
+			"invoice_amount_cents": invoiceAmountCents,
 		}
 		if approved {
 			var target User
@@ -249,7 +295,7 @@ func ReviewQuotaApplication(id, reviewerId int, approved bool, comment string) (
 			if target.Role != common.RoleCommonUser || target.Status != common.UserStatusEnabled {
 				return errors.New("target must be an enabled normal user")
 			}
-			before, after, err := adjustUserQuotaWithManualInvoiceCreditTx(tx, application.TargetUserId, reviewerId, "add", application.QuotaAmount, application.InvoiceAmountCents)
+			before, after, err := adjustUserQuotaWithManualInvoiceCreditTx(tx, application.TargetUserId, reviewerId, "add", application.QuotaAmount, invoiceAmountCents)
 			if err != nil {
 				return err
 			}
