@@ -66,6 +66,33 @@ export function hasPermission(
   return user.permissions?.admin_permissions?.[resource]?.[action] === true
 }
 
+/**
+ * Returns true when an admin has been reduced to the quota-application
+ * capability only.  The backend sends the effective permission matrix, so we
+ * can use it to tailor the admin navigation without affecting root users or
+ * legacy admins that have no matrix at all.
+ */
+export function isQuotaApplicationOnlyAdmin(
+  user: AuthUser | null | undefined
+): boolean {
+  if (!user || user.role < ROLE.ADMIN || user.role === ROLE.SUPER_ADMIN) {
+    return false
+  }
+
+  const permissions = user.permissions?.admin_permissions
+  if (!permissions || !hasPermission(user, 'quota_application', 'apply')) {
+    return false
+  }
+
+  return !Object.entries(permissions).some(([resource, actions]) =>
+    Object.entries(actions).some(
+      ([action, allowed]) =>
+        allowed === true &&
+        !(resource === 'quota_application' && action === 'apply')
+    )
+  )
+}
+
 // roleGrants returns the baseline grant matrix for the given role key.
 export function roleGrants(
   catalog: PermissionCatalog,
