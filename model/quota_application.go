@@ -60,8 +60,8 @@ type QuotaApplicationSummary struct {
 	PendingCount      int64                         `json:"pending_count"`
 	RejectedQuota     int64                         `json:"rejected_quota"`
 	RejectedCount     int64                         `json:"rejected_count"`
-	Sales             []QuotaApplicationSalesSummary `json:"sales"`
-	Applications      []QuotaApplication             `json:"applications"`
+	Sales             []QuotaApplicationSalesSummary `json:"sales" gorm:"-"`
+	Applications      []QuotaApplication             `json:"applications" gorm:"-"`
 }
 
 // GetQuotaApplicationSummary returns approved sales totals and the supporting

@@ -78,6 +78,16 @@ export async function presignQuotaApplicationAttachment(file: File) {
   return res.data.data as { object_key: string; upload_url: string; public_url: string }
 }
 
+export async function uploadQuotaApplicationAttachment(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await api.post('/api/quota-applications/attachments/upload', form)
+  if (!res.data?.success || !res.data?.data) {
+    throw new Error(res.data?.message || 'Attachment upload failed')
+  }
+  return res.data.data as { object_key: string; file_name: string; content_type: string; file_size: number; public_url: string }
+}
+
 export async function reviewQuotaApplication(
   id: number,
   approved: boolean,

@@ -1,14 +1,15 @@
 package service
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/QuantumNous/new-api/common"
 )
 
@@ -33,14 +34,16 @@ func R2ObjectURL(config QuotaApplicationR2Config, key string) string {
 
 func PresignQuotaApplicationUpload(config QuotaApplicationR2Config, key, contentType string) (string, error) {
 	if !config.Enabled || config.Endpoint == "" || config.Region == "" || config.Bucket == "" || config.AccessKeyID == "" || config.AccessKeySecret == "" { return "", fmt.Errorf("R2 storage is not configured") }
-	t := time.Now().UTC(); amzDate := t.Format("20060102T150405Z"); date := t.Format("20060102"); host := strings.TrimPrefix(strings.TrimPrefix(config.Endpoint, "https://"), "http://"); host = strings.TrimRight(host, "/")
-	path := "/" + url.PathEscape(config.Bucket) + "/" + strings.ReplaceAll(key, " ", "%20")
-	credential := config.AccessKeyID + "/" + date + "/" + config.Region + "/s3/aws4_request"
-	query := "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=" + url.QueryEscape(credential) + "&X-Amz-Date=" + amzDate + "&X-Amz-Expires=900&X-Amz-SignedHeaders=content-type%3Bhost"
-	canonical := "PUT\n" + path + "\n" + query + "\ncontent-type:" + contentType + "\nhost:" + host + "\n\ncontent-type;host\nUNSIGNED-PAYLOAD"
-	hash := sha256.Sum256([]byte(canonical)); scope := date + "/" + config.Region + "/s3/aws4_request"; stringToSign := "AWS4-HMAC-SHA256\n" + amzDate + "\n" + scope + "\n" + hex.EncodeToString(hash[:])
-	kDate := hmacSha256([]byte("AWS4"+config.AccessKeySecret), date); kRegion := hmacSha256(kDate, config.Region); kService := hmacSha256(kRegion, "s3"); kSigning := hmacSha256(kService, "aws4_request"); sig := hmacSha256(kSigning, stringToSign)
-	return "https://" + host + path + "?" + query + "&X-Amz-Signature=" + hex.EncodeToString(sig), nil
+	target := strings.TrimRight(config.Endpoint, "/") + "/" + url.PathEscape(config.Bucket) + "/" + strings.TrimLeft(key, "/")
+	request, err := http.NewRequest(http.MethodPut, target, nil)
+	if err != nil { return "", err }
+	request.Header.Set("Content-Type", contentType)
+	query := request.URL.Query()
+	query.Set("X-Amz-Expires", "900")
+	request.URL.RawQuery = query.Encode()
+	provider := credentials.NewStaticCredentialsProvider(config.AccessKeyID, config.AccessKeySecret, "")
+	value, err := provider.Retrieve(context.Background())
+	if err != nil { return "", err }
+	signedURL, _, err := v4.NewSigner().PresignHTTP(context.Background(), value, request, "UNSIGNED-PAYLOAD", "s3", config.Region, time.Now())
+	return signedURL, err
 }
-
-func hmacSha256(key []byte, value string) []byte { h := hmac.New(sha256.New, key); h.Write([]byte(value)); return h.Sum(nil) }

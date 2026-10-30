@@ -64,7 +64,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createQuotaApplication,
-  presignQuotaApplicationAttachment,
+  uploadQuotaApplicationAttachment,
   getQuotaApplicationSummary,
   listQuotaApplications,
   reviewQuotaApplication,
@@ -94,7 +94,10 @@ function getReconciliationRange(granularity: string, value: string) {
     end = new Date(start)
     end.setDate(start.getDate() + 1)
   }
-  return { from: Math.floor(start.getTime() / 1000), to: Math.floor(end.getTime() / 1000) }
+  return {
+    from: Math.floor(start.getTime() / 1000),
+    to: Math.floor(end.getTime() / 1000),
+  }
 }
 
 function getLocalDateInputValue() {
@@ -114,35 +117,78 @@ function ReconciliationView(props: { isRoot: boolean }) {
     queryKey: ['quota-application-summary', range.from, range.to, applicantId],
     queryFn: () => getQuotaApplicationSummary({ ...range, applicantId }),
   })
-  const summary = data ?? {
-    quota_amount: 0, application_count: 0, customer_count: 0,
-    pending_quota: 0, pending_count: 0, rejected_quota: 0, rejected_count: 0,
-    sales: [], applications: [],
-  }
+  const summary = data
+    ? {
+        ...data,
+        // Older API responses may serialize empty slices as null.
+        sales: Array.isArray(data.sales) ? data.sales : [],
+        applications: Array.isArray(data.applications) ? data.applications : [],
+      }
+    : {
+        quota_amount: 0,
+        application_count: 0,
+        customer_count: 0,
+        pending_quota: 0,
+        pending_count: 0,
+        rejected_quota: 0,
+        rejected_count: 0,
+        sales: [],
+        applications: [],
+      }
   const selectedSales = props.isRoot ? summary.sales : []
   return (
     <div className='space-y-4'>
       <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-        <Select value={granularity} onValueChange={(value) => value && setGranularity(value)}>
-          <SelectTrigger className='w-full sm:w-36'><SelectValue /></SelectTrigger>
+        <Select
+          value={granularity}
+          onValueChange={(value) => value && setGranularity(value)}
+        >
+          <SelectTrigger className='w-full sm:w-36'>
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value='day'>{t('Daily')}</SelectItem>
             <SelectItem value='week'>{t('Weekly')}</SelectItem>
             <SelectItem value='month'>{t('Monthly')}</SelectItem>
           </SelectContent>
         </Select>
-        <Input type='date' value={date} onChange={(event) => setDate(event.target.value)} className='w-full sm:w-48' />
+        <Input
+          type='date'
+          value={date}
+          onChange={(event) => setDate(event.target.value)}
+          className='w-full sm:w-48'
+        />
         {props.isRoot && (
-          <Select value={applicantId ? String(applicantId) : 'all'} onValueChange={(value) => setApplicantId(value && value !== 'all' ? Number(value) : undefined)}>
-            <SelectTrigger className='w-full sm:w-56'><SelectValue placeholder={t('All sales')} /></SelectTrigger>
+          <Select
+            value={applicantId ? String(applicantId) : 'all'}
+            onValueChange={(value) =>
+              setApplicantId(
+                value && value !== 'all' ? Number(value) : undefined
+              )
+            }
+          >
+            <SelectTrigger className='w-full sm:w-56'>
+              <SelectValue placeholder={t('All sales')} />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value='all'>{t('All sales')}</SelectItem>
-              {selectedSales.map((sale) => <SelectItem key={sale.applicant_id} value={String(sale.applicant_id)}>{sale.applicant_username}</SelectItem>)}
+              {selectedSales.map((sale) => (
+                <SelectItem
+                  key={sale.applicant_id}
+                  value={String(sale.applicant_id)}
+                >
+                  {sale.applicant_username}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         )}
       </div>
-      {isError && <p className='text-destructive text-sm'>{t('Failed to load reconciliation')}</p>}
+      {isError && (
+        <p className='text-destructive text-sm'>
+          {t('Failed to load reconciliation')}
+        </p>
+      )}
       <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
         {[
           [t('Credited quota'), formatQuota(summary.quota_amount)],
@@ -150,21 +196,87 @@ function ReconciliationView(props: { isRoot: boolean }) {
           [t('Applications'), summary.application_count],
           [t('Pending quota'), formatQuota(summary.pending_quota)],
           [t('Rejected quota'), formatQuota(summary.rejected_quota)],
-        ].map(([label, value]) => <div key={String(label)} className='rounded-lg border p-4'><p className='text-muted-foreground text-xs'>{label}</p><p className='mt-2 text-xl font-semibold'>{isLoading ? '—' : value}</p></div>)}
+        ].map(([label, value]) => (
+          <div key={String(label)} className='rounded-lg border p-4'>
+            <p className='text-muted-foreground text-xs'>{label}</p>
+            <p className='mt-2 text-xl font-semibold'>
+              {isLoading ? '—' : value}
+            </p>
+          </div>
+        ))}
       </div>
       {props.isRoot && !applicantId && summary.sales.length > 0 && (
         <div className='rounded-md border'>
           <Table>
-            <TableHeader><TableRow><TableHead>{t('Sales administrator')}</TableHead><TableHead>{t('Credited quota')}</TableHead><TableHead>{t('Customers')}</TableHead><TableHead>{t('Applications')}</TableHead></TableRow></TableHeader>
-            <TableBody>{summary.sales.map((sale) => <TableRow key={sale.applicant_id}><TableCell>{sale.applicant_username}</TableCell><TableCell>{formatQuota(sale.quota_amount)}</TableCell><TableCell>{sale.customer_count}</TableCell><TableCell>{sale.application_count}</TableCell></TableRow>)}</TableBody>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('Sales administrator')}</TableHead>
+                <TableHead>{t('Credited quota')}</TableHead>
+                <TableHead>{t('Customers')}</TableHead>
+                <TableHead>{t('Applications')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.sales.map((sale) => (
+                <TableRow key={sale.applicant_id}>
+                  <TableCell>{sale.applicant_username}</TableCell>
+                  <TableCell>{formatQuota(sale.quota_amount)}</TableCell>
+                  <TableCell>{sale.customer_count}</TableCell>
+                  <TableCell>{sale.application_count}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
           </Table>
         </div>
       )}
       <div className='rounded-md border'>
         <Table className='min-w-[850px]'>
-          <TableHeader><TableRow><TableHead>{props.isRoot ? t('Sales administrator') : t('Target user')}</TableHead>{props.isRoot && <TableHead>{t('Target user')}</TableHead>}<TableHead>{t('Credit amount')}</TableHead><TableHead>{t('Status')}</TableHead><TableHead>{t('Submitted at')}</TableHead><TableHead>{t('Reviewed at')}</TableHead></TableRow></TableHeader>
+          <TableHeader>
+            <TableRow>
+              <TableHead>
+                {props.isRoot ? t('Sales administrator') : t('Target user')}
+              </TableHead>
+              {props.isRoot && <TableHead>{t('Target user')}</TableHead>}
+              <TableHead>{t('Credit amount')}</TableHead>
+              <TableHead>{t('Status')}</TableHead>
+              <TableHead>{t('Submitted at')}</TableHead>
+              <TableHead>{t('Reviewed at')}</TableHead>
+            </TableRow>
+          </TableHeader>
           <TableBody>
-            {summary.applications.length === 0 ? <TableRow><TableCell colSpan={props.isRoot ? 6 : 5} className='text-muted-foreground h-24 text-center'>{isLoading ? t('Loading...') : t('No applications')}</TableCell></TableRow> : summary.applications.map((item) => <TableRow key={item.id}><TableCell>{props.isRoot ? item.applicant_username : item.target_username}</TableCell>{props.isRoot && <TableCell>{item.target_username}</TableCell>}<TableCell className='font-medium'>{formatQuota(item.quota_amount)}</TableCell><TableCell><ApplicationStatusBadge status={item.status} /></TableCell><TableCell>{formatTimestamp(item.created_at)}</TableCell><TableCell>{item.reviewed_at ? formatTimestamp(item.reviewed_at) : '—'}</TableCell></TableRow>)}
+            {summary.applications.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={props.isRoot ? 6 : 5}
+                  className='text-muted-foreground h-24 text-center'
+                >
+                  {isLoading ? t('Loading...') : t('No applications')}
+                </TableCell>
+              </TableRow>
+            ) : (
+              summary.applications.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell>
+                    {props.isRoot
+                      ? item.applicant_username
+                      : item.target_username}
+                  </TableCell>
+                  {props.isRoot && (
+                    <TableCell>{item.target_username}</TableCell>
+                  )}
+                  <TableCell className='font-medium'>
+                    {formatQuota(item.quota_amount)}
+                  </TableCell>
+                  <TableCell>
+                    <ApplicationStatusBadge status={item.status} />
+                  </TableCell>
+                  <TableCell>{formatTimestamp(item.created_at)}</TableCell>
+                  <TableCell>
+                    {item.reviewed_at ? formatTimestamp(item.reviewed_at) : '—'}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
@@ -254,11 +366,23 @@ function ApplicationDetails(props: {
           </div>
           {item.attachments && item.attachments.length > 0 && (
             <div>
-              <p className='text-muted-foreground mb-2'>{t('Supporting screenshots')}</p>
+              <p className='text-muted-foreground mb-2'>
+                {t('Supporting screenshots')}
+              </p>
               <div className='grid grid-cols-3 gap-2'>
                 {item.attachments.map((attachment) => (
-                  <a key={attachment.id} href={attachment.public_url || '#'} target='_blank' rel='noreferrer' className='bg-muted block overflow-hidden rounded-md border'>
-                    <img src={attachment.public_url} alt={attachment.file_name} className='h-28 w-full object-cover' />
+                  <a
+                    key={attachment.id}
+                    href={attachment.public_url || '#'}
+                    target='_blank'
+                    rel='noreferrer'
+                    className='bg-muted block overflow-hidden rounded-md border'
+                  >
+                    <img
+                      src={attachment.public_url}
+                      alt={attachment.file_name}
+                      className='h-28 w-full object-cover'
+                    />
                   </a>
                 ))}
               </div>
@@ -349,10 +473,7 @@ function CreateApplicationDialog(props: {
     try {
       const uploaded = []
       for (const file of attachments) {
-        const presigned = await presignQuotaApplicationAttachment(file)
-        const upload = await fetch(presigned.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-        if (!upload.ok) throw new Error(t('Attachment upload failed'))
-        uploaded.push({ object_key: presigned.object_key, file_name: file.name, content_type: file.type, file_size: file.size, public_url: presigned.public_url })
+        uploaded.push(await uploadQuotaApplicationAttachment(file))
       }
       const result = await createQuotaApplication({
         target_user_id: selectedUser.id,
@@ -368,6 +489,12 @@ function CreateApplicationDialog(props: {
       } else {
         toast.error(result.message || t('Failed to submit quota application'))
       }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('Failed to submit quota application')
+      )
     } finally {
       setSubmitting(false)
     }
@@ -470,13 +597,39 @@ function CreateApplicationDialog(props: {
 
         <div className='space-y-2'>
           <Label>{t('Supporting screenshots (optional)')}</Label>
-          <Input type='file' accept='image/*' multiple onChange={(event) => {
-            const selected = [...(event.target.files ?? [])]
-            if (selected.length > 3 || selected.some((file) => file.size > 10 * 1024 * 1024)) { toast.error(t('Select up to 3 images, each no larger than 10 MB')); return }
-            setAttachments(selected)
-          }} />
-          <p className='text-muted-foreground text-xs'>{t('Upload 0 to 3 payment or invoice screenshots. Each image must be no larger than 10 MB.')}</p>
-          {attachments.length > 0 && <div className='text-muted-foreground text-xs'>{attachments.map((file) => `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`).join('、')}</div>}
+          <Input
+            type='file'
+            accept='image/*'
+            multiple
+            onChange={(event) => {
+              const selected = [...(event.target.files ?? [])]
+              if (
+                selected.length > 3 ||
+                selected.some((file) => file.size > 10 * 1024 * 1024)
+              ) {
+                toast.error(
+                  t('Select up to 3 images, each no larger than 10 MB')
+                )
+                return
+              }
+              setAttachments(selected)
+            }}
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Upload 0 to 3 payment or invoice screenshots. Each image must be no larger than 10 MB.'
+            )}
+          </p>
+          {attachments.length > 0 && (
+            <div className='text-muted-foreground text-xs'>
+              {attachments
+                .map(
+                  (file) =>
+                    `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`
+                )
+                .join('、')}
+            </div>
+          )}
         </div>
 
         <div className='grid gap-4 sm:grid-cols-2'>
@@ -534,7 +687,9 @@ export function QuotaApplications() {
   const client = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
   const isRoot = user?.role === ROLE.SUPER_ADMIN
-  const [view, setView] = useState<'applications' | 'reconciliation'>('applications')
+  const [view, setView] = useState<'applications' | 'reconciliation'>(
+    'applications'
+  )
   const [status, setStatus] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -616,271 +771,289 @@ export function QuotaApplications() {
       <SectionPageLayout.Content>
         <div className='space-y-4'>
           <div className='flex gap-2 border-b pb-2'>
-            <Button variant={view === 'applications' ? 'default' : 'ghost'} onClick={() => setView('applications')}>
+            <Button
+              variant={view === 'applications' ? 'default' : 'ghost'}
+              onClick={() => setView('applications')}
+            >
               {t('Applications')}
             </Button>
-            <Button variant={view === 'reconciliation' ? 'default' : 'ghost'} onClick={() => setView('reconciliation')}>
+            <Button
+              variant={view === 'reconciliation' ? 'default' : 'ghost'}
+              onClick={() => setView('reconciliation')}
+            >
               <BarChart3 />
               {isRoot ? t('Team reconciliation') : t('My reconciliation')}
             </Button>
           </div>
           {view === 'reconciliation' ? (
             <ReconciliationView isRoot={isRoot} />
-          ) : <>
-          <div className='flex flex-col gap-2 sm:flex-row'>
-            <Select
-              value={status}
-              onValueChange={(value) => {
-                if (!value) return
-                setStatus(value)
-                setPage(1)
-              }}
-            >
-              <SelectTrigger className='w-full sm:w-52'>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='all'>{t('All statuses')}</SelectItem>
-                <SelectItem value='pending'>{t('Pending review')}</SelectItem>
-                <SelectItem value='approved'>{t('Credited')}</SelectItem>
-                <SelectItem value='rejected'>{t('Rejected')}</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className='flex w-full max-w-md gap-2'>
-              <Input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    setKeyword(searchInput.trim())
+          ) : (
+            <>
+              <div className='flex flex-col gap-2 sm:flex-row'>
+                <Select
+                  value={status}
+                  onValueChange={(value) => {
+                    if (!value) return
+                    setStatus(value)
                     setPage(1)
-                  }
-                }}
-                placeholder={t('Search applicant or target user')}
-              />
-              <Button
-                variant='outline'
-                size='icon'
-                title={t('Search')}
-                onClick={() => {
-                  setKeyword(searchInput.trim())
-                  setPage(1)
-                }}
-              >
-                <Search />
-              </Button>
-            </div>
-          </div>
-
-          <div className='hidden rounded-md border md:block'>
-            <Table className='min-w-[900px]'>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('Application ID')}</TableHead>
-                  {isRoot && <TableHead>{t('Applicant')}</TableHead>}
-                  <TableHead>{t('Target user')}</TableHead>
-                  <TableHead>{t('Credit amount')}</TableHead>
-                  <TableHead>{t('Submitted at')}</TableHead>
-                  <TableHead>{t('Status')}</TableHead>
-                  <TableHead className='text-right'>{t('Actions')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(isLoading || isError || items.length === 0) && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={isRoot ? 7 : 6}
-                      className={
-                        isError
-                          ? 'text-destructive h-28 text-center'
-                          : 'text-muted-foreground h-28 text-center'
+                  }}
+                >
+                  <SelectTrigger className='w-full sm:w-52'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>{t('All statuses')}</SelectItem>
+                    <SelectItem value='pending'>
+                      {t('Pending review')}
+                    </SelectItem>
+                    <SelectItem value='approved'>{t('Credited')}</SelectItem>
+                    <SelectItem value='rejected'>{t('Rejected')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className='flex w-full max-w-md gap-2'>
+                  <Input
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        setKeyword(searchInput.trim())
+                        setPage(1)
                       }
-                    >
-                      {emptyMessage}
-                    </TableCell>
-                  </TableRow>
+                    }}
+                    placeholder={t('Search applicant or target user')}
+                  />
+                  <Button
+                    variant='outline'
+                    size='icon'
+                    title={t('Search')}
+                    onClick={() => {
+                      setKeyword(searchInput.trim())
+                      setPage(1)
+                    }}
+                  >
+                    <Search />
+                  </Button>
+                </div>
+              </div>
+
+              <div className='hidden rounded-md border md:block'>
+                <Table className='min-w-[900px]'>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('Application ID')}</TableHead>
+                      {isRoot && <TableHead>{t('Applicant')}</TableHead>}
+                      <TableHead>{t('Target user')}</TableHead>
+                      <TableHead>{t('Credit amount')}</TableHead>
+                      <TableHead>{t('Submitted at')}</TableHead>
+                      <TableHead>{t('Status')}</TableHead>
+                      <TableHead className='text-right'>
+                        {t('Actions')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(isLoading || isError || items.length === 0) && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={isRoot ? 7 : 6}
+                          className={
+                            isError
+                              ? 'text-destructive h-28 text-center'
+                              : 'text-muted-foreground h-28 text-center'
+                          }
+                        >
+                          {emptyMessage}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className='font-medium'>
+                          #{item.id}
+                        </TableCell>
+                        {isRoot && (
+                          <TableCell>{item.applicant_username}</TableCell>
+                        )}
+                        <TableCell>
+                          <span className='block font-medium'>
+                            {item.target_username}
+                          </span>
+                          <span className='text-muted-foreground text-xs'>
+                            {item.target_display_name &&
+                              `${item.target_display_name} · `}
+                            ID {item.target_user_id}
+                          </span>
+                        </TableCell>
+                        <TableCell className='font-medium'>
+                          {formatQuota(item.quota_amount)}
+                        </TableCell>
+                        <TableCell>
+                          {formatTimestamp(item.created_at)}
+                        </TableCell>
+                        <TableCell>
+                          <ApplicationStatusBadge status={item.status} />
+                        </TableCell>
+                        <TableCell>
+                          <div className='flex justify-end gap-1'>
+                            <Button
+                              variant='ghost'
+                              size='icon'
+                              title={t('View details')}
+                              onClick={() => setDetails(item)}
+                            >
+                              <Eye />
+                            </Button>
+                            {isRoot && item.status === 'pending' && (
+                              <>
+                                <Button
+                                  variant='ghost'
+                                  size='icon'
+                                  title={t('Approve')}
+                                  onClick={() => openReview(item, true)}
+                                >
+                                  <Check />
+                                </Button>
+                                <Button
+                                  variant='ghost'
+                                  size='icon'
+                                  title={t('Reject')}
+                                  onClick={() => openReview(item, false)}
+                                >
+                                  <X />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className='space-y-2 md:hidden'>
+                {(isLoading || isError || items.length === 0) && (
+                  <div
+                    className={
+                      isError
+                        ? 'text-destructive rounded-md border px-4 py-10 text-center text-sm'
+                        : 'text-muted-foreground rounded-md border px-4 py-10 text-center text-sm'
+                    }
+                  >
+                    {emptyMessage}
+                  </div>
                 )}
                 {items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className='font-medium'>#{item.id}</TableCell>
-                    {isRoot && <TableCell>{item.applicant_username}</TableCell>}
-                    <TableCell>
-                      <span className='block font-medium'>
-                        {item.target_username}
-                      </span>
-                      <span className='text-muted-foreground text-xs'>
-                        {item.target_display_name &&
-                          `${item.target_display_name} · `}
-                        ID {item.target_user_id}
-                      </span>
-                    </TableCell>
-                    <TableCell className='font-medium'>
-                      {formatQuota(item.quota_amount)}
-                    </TableCell>
-                    <TableCell>{formatTimestamp(item.created_at)}</TableCell>
-                    <TableCell>
-                      <ApplicationStatusBadge status={item.status} />
-                    </TableCell>
-                    <TableCell>
-                      <div className='flex justify-end gap-1'>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          title={t('View details')}
-                          onClick={() => setDetails(item)}
-                        >
-                          <Eye />
-                        </Button>
-                        {isRoot && item.status === 'pending' && (
-                          <>
-                            <Button
-                              variant='ghost'
-                              size='icon'
-                              title={t('Approve')}
-                              onClick={() => openReview(item, true)}
-                            >
-                              <Check />
-                            </Button>
-                            <Button
-                              variant='ghost'
-                              size='icon'
-                              title={t('Reject')}
-                              onClick={() => openReview(item, false)}
-                            >
-                              <X />
-                            </Button>
-                          </>
-                        )}
+                  <div key={item.id} className='rounded-md border p-3'>
+                    <div className='flex items-start justify-between gap-3'>
+                      <div className='min-w-0'>
+                        <p className='truncate font-medium'>
+                          {item.target_username}
+                        </p>
+                        <p className='text-muted-foreground truncate text-xs'>
+                          {item.target_display_name &&
+                            `${item.target_display_name} · `}
+                          ID {item.target_user_id}
+                        </p>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className='space-y-2 md:hidden'>
-            {(isLoading || isError || items.length === 0) && (
-              <div
-                className={
-                  isError
-                    ? 'text-destructive rounded-md border px-4 py-10 text-center text-sm'
-                    : 'text-muted-foreground rounded-md border px-4 py-10 text-center text-sm'
-                }
-              >
-                {emptyMessage}
-              </div>
-            )}
-            {items.map((item) => (
-              <div key={item.id} className='rounded-md border p-3'>
-                <div className='flex items-start justify-between gap-3'>
-                  <div className='min-w-0'>
-                    <p className='truncate font-medium'>
-                      {item.target_username}
-                    </p>
-                    <p className='text-muted-foreground truncate text-xs'>
-                      {item.target_display_name &&
-                        `${item.target_display_name} · `}
-                      ID {item.target_user_id}
-                    </p>
-                  </div>
-                  <ApplicationStatusBadge status={item.status} />
-                </div>
-
-                <div className='mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm'>
-                  <div>
-                    <p className='text-muted-foreground text-xs'>
-                      {t('Credit amount')}
-                    </p>
-                    <p className='font-medium'>
-                      {formatQuota(item.quota_amount)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className='text-muted-foreground text-xs'>
-                      {t('Application ID')}
-                    </p>
-                    <p className='font-medium'>#{item.id}</p>
-                  </div>
-                  {isRoot && (
-                    <div>
-                      <p className='text-muted-foreground text-xs'>
-                        {t('Applicant')}
-                      </p>
-                      <p className='truncate'>{item.applicant_username}</p>
+                      <ApplicationStatusBadge status={item.status} />
                     </div>
-                  )}
-                  <div className={isRoot ? '' : 'col-span-2'}>
-                    <p className='text-muted-foreground text-xs'>
-                      {t('Submitted at')}
-                    </p>
-                    <p>{formatTimestamp(item.created_at)}</p>
-                  </div>
-                </div>
 
-                <div className='mt-3 flex justify-end gap-1 border-t pt-2'>
+                    <div className='mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm'>
+                      <div>
+                        <p className='text-muted-foreground text-xs'>
+                          {t('Credit amount')}
+                        </p>
+                        <p className='font-medium'>
+                          {formatQuota(item.quota_amount)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className='text-muted-foreground text-xs'>
+                          {t('Application ID')}
+                        </p>
+                        <p className='font-medium'>#{item.id}</p>
+                      </div>
+                      {isRoot && (
+                        <div>
+                          <p className='text-muted-foreground text-xs'>
+                            {t('Applicant')}
+                          </p>
+                          <p className='truncate'>{item.applicant_username}</p>
+                        </div>
+                      )}
+                      <div className={isRoot ? '' : 'col-span-2'}>
+                        <p className='text-muted-foreground text-xs'>
+                          {t('Submitted at')}
+                        </p>
+                        <p>{formatTimestamp(item.created_at)}</p>
+                      </div>
+                    </div>
+
+                    <div className='mt-3 flex justify-end gap-1 border-t pt-2'>
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        onClick={() => setDetails(item)}
+                      >
+                        <Eye />
+                        {t('View details')}
+                      </Button>
+                      {isRoot && item.status === 'pending' && (
+                        <>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            title={t('Approve')}
+                            onClick={() => openReview(item, true)}
+                          >
+                            <Check />
+                          </Button>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            title={t('Reject')}
+                            onClick={() => openReview(item, false)}
+                          >
+                            <X />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className='flex items-center justify-between text-sm'>
+                <span className='text-muted-foreground'>
+                  {t('{{count}} applications', { count: data?.total ?? 0 })}
+                </span>
+                <div className='flex items-center gap-2'>
                   <Button
-                    variant='ghost'
-                    size='sm'
-                    onClick={() => setDetails(item)}
+                    variant='outline'
+                    size='icon'
+                    title={t('Previous page')}
+                    disabled={page <= 1}
+                    onClick={() => setPage((value) => value - 1)}
                   >
-                    <Eye />
-                    {t('View details')}
+                    <ChevronLeft />
                   </Button>
-                  {isRoot && item.status === 'pending' && (
-                    <>
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        title={t('Approve')}
-                        onClick={() => openReview(item, true)}
-                      >
-                        <Check />
-                      </Button>
-                      <Button
-                        variant='ghost'
-                        size='icon'
-                        title={t('Reject')}
-                        onClick={() => openReview(item, false)}
-                      >
-                        <X />
-                      </Button>
-                    </>
-                  )}
+                  <span>
+                    {page} / {totalPages}
+                  </span>
+                  <Button
+                    variant='outline'
+                    size='icon'
+                    title={t('Next page')}
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((value) => value + 1)}
+                  >
+                    <ChevronRight />
+                  </Button>
                 </div>
               </div>
-            ))}
-          </div>
-
-          <div className='flex items-center justify-between text-sm'>
-            <span className='text-muted-foreground'>
-              {t('{{count}} applications', { count: data?.total ?? 0 })}
-            </span>
-            <div className='flex items-center gap-2'>
-              <Button
-                variant='outline'
-                size='icon'
-                title={t('Previous page')}
-                disabled={page <= 1}
-                onClick={() => setPage((value) => value - 1)}
-              >
-                <ChevronLeft />
-              </Button>
-              <span>
-                {page} / {totalPages}
-              </span>
-              <Button
-                variant='outline'
-                size='icon'
-                title={t('Next page')}
-                disabled={page >= totalPages}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                <ChevronRight />
-              </Button>
-            </div>
-          </div>
-          </>}
+            </>
+          )}
         </div>
 
         <CreateApplicationDialog

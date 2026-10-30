@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -43,10 +44,51 @@ func PresignQuotaApplicationAttachment(c *gin.Context) {
 	var req struct { FileName string `json:"file_name"`; ContentType string `json:"content_type"` }
 	if err := common.DecodeJson(c.Request.Body, &req); err != nil { common.ApiError(c, err); return }
 	if !strings.HasPrefix(req.ContentType, "image/") || req.FileName == "" { common.ApiErrorMsg(c, "only image uploads are allowed"); return }
-	key := fmt.Sprintf("quota-applications/%d/%d-%d-%s", time.Now().UTC().Year(), c.GetInt("id"), time.Now().UnixNano(), strings.ReplaceAll(filepath.Base(req.FileName), " ", "_"))
+	key := quotaApplicationAttachmentKey(c, req.FileName)
 	url, err := service.PresignQuotaApplicationUpload(service.QuotaApplicationR2ConfigFromOptions(), key, req.ContentType)
 	if err != nil { common.ApiError(c, err); return }
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"object_key": key, "upload_url": url, "public_url": service.R2ObjectURL(service.QuotaApplicationR2ConfigFromOptions(), key)}})
+}
+
+// UploadQuotaApplicationAttachment proxies the upload through new-api. This
+// avoids browser-to-R2 CORS failures while keeping the object stored in R2.
+func UploadQuotaApplicationAttachment(c *gin.Context) {
+	file, header, err := c.Request.FormFile("file")
+	if err != nil { common.ApiErrorMsg(c, "attachment file is required"); return }
+	defer file.Close()
+	fileSize := header.Size
+	if fileSize <= 0 {
+		if seeker, ok := file.(io.Seeker); ok {
+			if end, seekErr := seeker.Seek(0, io.SeekEnd); seekErr == nil {
+				fileSize = end
+				_, _ = seeker.Seek(0, io.SeekStart)
+			}
+		}
+	}
+	if fileSize <= 0 || fileSize > 10*1024*1024 { common.ApiErrorMsg(c, "attachment exceeds 10 MB"); return }
+	contentType := header.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") { common.ApiErrorMsg(c, "only image uploads are allowed"); return }
+	config := service.QuotaApplicationR2ConfigFromOptions()
+	key := quotaApplicationAttachmentKey(c, header.Filename)
+	uploadURL, err := service.PresignQuotaApplicationUpload(config, key, contentType)
+	if err != nil { common.ApiError(c, err); return }
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPut, uploadURL, file)
+	if err != nil { common.ApiError(c, err); return }
+	req.Header.Set("Content-Type", contentType)
+	if fileSize >= 0 { req.ContentLength = fileSize }
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil { common.ApiError(c, err); return }
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		common.ApiErrorMsg(c, fmt.Sprintf("R2 upload failed: %s", strings.TrimSpace(string(body))))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"object_key": key, "file_name": header.Filename, "content_type": contentType, "file_size": fileSize, "public_url": service.R2ObjectURL(config, key)}})
+}
+
+func quotaApplicationAttachmentKey(c *gin.Context, fileName string) string {
+	return fmt.Sprintf("quota-applications/%d/%d-%d-%s", time.Now().UTC().Year(), c.GetInt("id"), time.Now().UnixNano(), strings.ReplaceAll(filepath.Base(fileName), " ", "_"))
 }
 
 type reviewQuotaApplicationRequest struct {
