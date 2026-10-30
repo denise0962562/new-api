@@ -22,6 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  BarChart3,
   Plus,
   Search,
   X,
@@ -63,6 +64,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createQuotaApplication,
+  getQuotaApplicationSummary,
   listQuotaApplications,
   reviewQuotaApplication,
   searchQuotaApplicationTargets,
@@ -72,6 +74,102 @@ import type {
   QuotaApplicationStatus,
   QuotaApplicationTarget,
 } from './types'
+
+function getReconciliationRange(granularity: string, value: string) {
+  const date = value ? new Date(`${value}T00:00:00`) : new Date()
+  let start = new Date(date)
+  let end = new Date(date)
+  if (granularity === 'month') {
+    start = new Date(date.getFullYear(), date.getMonth(), 1)
+    end = new Date(date.getFullYear(), date.getMonth() + 1, 1)
+  } else if (granularity === 'week') {
+    const day = date.getDay() || 7
+    start = new Date(date)
+    start.setDate(date.getDate() - day + 1)
+    end = new Date(start)
+    end.setDate(start.getDate() + 7)
+  } else {
+    start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    end = new Date(start)
+    end.setDate(start.getDate() + 1)
+  }
+  return { from: Math.floor(start.getTime() / 1000), to: Math.floor(end.getTime() / 1000) }
+}
+
+function getLocalDateInputValue() {
+  const date = new Date()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+function ReconciliationView(props: { isRoot: boolean }) {
+  const { t } = useTranslation()
+  const [granularity, setGranularity] = useState('day')
+  const [date, setDate] = useState(getLocalDateInputValue)
+  const [applicantId, setApplicantId] = useState<number | undefined>()
+  const range = getReconciliationRange(granularity, date)
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['quota-application-summary', range.from, range.to, applicantId],
+    queryFn: () => getQuotaApplicationSummary({ ...range, applicantId }),
+  })
+  const summary = data ?? {
+    quota_amount: 0, application_count: 0, customer_count: 0,
+    pending_quota: 0, pending_count: 0, rejected_quota: 0, rejected_count: 0,
+    sales: [], applications: [],
+  }
+  const selectedSales = props.isRoot ? summary.sales : []
+  return (
+    <div className='space-y-4'>
+      <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
+        <Select value={granularity} onValueChange={(value) => value && setGranularity(value)}>
+          <SelectTrigger className='w-full sm:w-36'><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value='day'>{t('Daily')}</SelectItem>
+            <SelectItem value='week'>{t('Weekly')}</SelectItem>
+            <SelectItem value='month'>{t('Monthly')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input type='date' value={date} onChange={(event) => setDate(event.target.value)} className='w-full sm:w-48' />
+        {props.isRoot && (
+          <Select value={applicantId ? String(applicantId) : 'all'} onValueChange={(value) => setApplicantId(value && value !== 'all' ? Number(value) : undefined)}>
+            <SelectTrigger className='w-full sm:w-56'><SelectValue placeholder={t('All sales')} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value='all'>{t('All sales')}</SelectItem>
+              {selectedSales.map((sale) => <SelectItem key={sale.applicant_id} value={String(sale.applicant_id)}>{sale.applicant_username}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+      {isError && <p className='text-destructive text-sm'>{t('Failed to load reconciliation')}</p>}
+      <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-5'>
+        {[
+          [t('Credited quota'), formatQuota(summary.quota_amount)],
+          [t('Customers'), summary.customer_count],
+          [t('Applications'), summary.application_count],
+          [t('Pending quota'), formatQuota(summary.pending_quota)],
+          [t('Rejected quota'), formatQuota(summary.rejected_quota)],
+        ].map(([label, value]) => <div key={String(label)} className='rounded-lg border p-4'><p className='text-muted-foreground text-xs'>{label}</p><p className='mt-2 text-xl font-semibold'>{isLoading ? '—' : value}</p></div>)}
+      </div>
+      {props.isRoot && !applicantId && summary.sales.length > 0 && (
+        <div className='rounded-md border'>
+          <Table>
+            <TableHeader><TableRow><TableHead>{t('Sales administrator')}</TableHead><TableHead>{t('Credited quota')}</TableHead><TableHead>{t('Customers')}</TableHead><TableHead>{t('Applications')}</TableHead></TableRow></TableHeader>
+            <TableBody>{summary.sales.map((sale) => <TableRow key={sale.applicant_id}><TableCell>{sale.applicant_username}</TableCell><TableCell>{formatQuota(sale.quota_amount)}</TableCell><TableCell>{sale.customer_count}</TableCell><TableCell>{sale.application_count}</TableCell></TableRow>)}</TableBody>
+          </Table>
+        </div>
+      )}
+      <div className='rounded-md border'>
+        <Table className='min-w-[850px]'>
+          <TableHeader><TableRow><TableHead>{props.isRoot ? t('Sales administrator') : t('Target user')}</TableHead>{props.isRoot && <TableHead>{t('Target user')}</TableHead>}<TableHead>{t('Credit amount')}</TableHead><TableHead>{t('Status')}</TableHead><TableHead>{t('Submitted at')}</TableHead><TableHead>{t('Reviewed at')}</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {summary.applications.length === 0 ? <TableRow><TableCell colSpan={props.isRoot ? 6 : 5} className='text-muted-foreground h-24 text-center'>{isLoading ? t('Loading...') : t('No applications')}</TableCell></TableRow> : summary.applications.map((item) => <TableRow key={item.id}><TableCell>{props.isRoot ? item.applicant_username : item.target_username}</TableCell>{props.isRoot && <TableCell>{item.target_username}</TableCell>}<TableCell className='font-medium'>{formatQuota(item.quota_amount)}</TableCell><TableCell><ApplicationStatusBadge status={item.status} /></TableCell><TableCell>{formatTimestamp(item.created_at)}</TableCell><TableCell>{item.reviewed_at ? formatTimestamp(item.reviewed_at) : '—'}</TableCell></TableRow>)}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
 
 const statusLabels: Record<QuotaApplicationStatus, string> = {
   pending: 'Pending review',
@@ -402,6 +500,7 @@ export function QuotaApplications() {
   const client = useQueryClient()
   const user = useAuthStore((state) => state.auth.user)
   const isRoot = user?.role === ROLE.SUPER_ADMIN
+  const [view, setView] = useState<'applications' | 'reconciliation'>('applications')
   const [status, setStatus] = useState('all')
   const [searchInput, setSearchInput] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -482,6 +581,18 @@ export function QuotaApplications() {
       )}
       <SectionPageLayout.Content>
         <div className='space-y-4'>
+          <div className='flex gap-2 border-b pb-2'>
+            <Button variant={view === 'applications' ? 'default' : 'ghost'} onClick={() => setView('applications')}>
+              {t('Applications')}
+            </Button>
+            <Button variant={view === 'reconciliation' ? 'default' : 'ghost'} onClick={() => setView('reconciliation')}>
+              <BarChart3 />
+              {isRoot ? t('Team reconciliation') : t('My reconciliation')}
+            </Button>
+          </div>
+          {view === 'reconciliation' ? (
+            <ReconciliationView isRoot={isRoot} />
+          ) : <>
           <div className='flex flex-col gap-2 sm:flex-row'>
             <Select
               value={status}
@@ -735,6 +846,7 @@ export function QuotaApplications() {
               </Button>
             </div>
           </div>
+          </>}
         </div>
 
         <CreateApplicationDialog

@@ -170,6 +170,7 @@ func SetApiRouter(router *gin.Engine) {
 		quotaApplicationRoute.Use(middleware.AdminAuth())
 		{
 			quotaApplicationRoute.GET("", middleware.RequirePermission(authz.QuotaApplicationApply), controller.ListQuotaApplications)
+			quotaApplicationRoute.GET("/summary", middleware.RequirePermission(authz.QuotaApplicationApply), controller.QuotaApplicationSummary)
 			quotaApplicationRoute.GET("/users/search", middleware.RequirePermission(authz.QuotaApplicationApply), controller.SearchQuotaApplicationTargets)
 			quotaApplicationRoute.GET("/:id", middleware.RequirePermission(authz.QuotaApplicationApply), controller.GetQuotaApplication)
 			quotaApplicationRoute.POST("", middleware.RequirePermission(authz.QuotaApplicationApply), controller.CreateQuotaApplication)

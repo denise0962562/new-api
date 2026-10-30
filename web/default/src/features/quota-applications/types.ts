@@ -53,6 +53,26 @@ export interface QuotaApplicationList {
   page_size: number
 }
 
+export interface QuotaApplicationSalesSummary {
+  applicant_id: number
+  applicant_username: string
+  quota_amount: number
+  application_count: number
+  customer_count: number
+}
+
+export interface QuotaApplicationSummary {
+  quota_amount: number
+  application_count: number
+  customer_count: number
+  pending_quota: number
+  pending_count: number
+  rejected_quota: number
+  rejected_count: number
+  sales: QuotaApplicationSalesSummary[]
+  applications: QuotaApplication[]
+}
+
 export interface CreateQuotaApplicationPayload {
   target_user_id: number
   quota_amount: number

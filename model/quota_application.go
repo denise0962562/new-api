@@ -43,6 +43,74 @@ type QuotaApplicationTarget struct {
 	Quota       int    `json:"quota"`
 }
 
+type QuotaApplicationSalesSummary struct {
+	ApplicantId       int    `json:"applicant_id"`
+	ApplicantUsername string `json:"applicant_username"`
+	QuotaAmount       int64  `json:"quota_amount"`
+	ApplicationCount  int64  `json:"application_count"`
+	CustomerCount     int64  `json:"customer_count"`
+}
+
+type QuotaApplicationSummary struct {
+	QuotaAmount       int64                         `json:"quota_amount"`
+	ApplicationCount  int64                         `json:"application_count"`
+	CustomerCount     int64                         `json:"customer_count"`
+	PendingQuota      int64                         `json:"pending_quota"`
+	PendingCount      int64                         `json:"pending_count"`
+	RejectedQuota     int64                         `json:"rejected_quota"`
+	RejectedCount     int64                         `json:"rejected_count"`
+	Sales             []QuotaApplicationSalesSummary `json:"sales"`
+	Applications      []QuotaApplication             `json:"applications"`
+}
+
+// GetQuotaApplicationSummary returns approved sales totals and the supporting
+// application rows for the requested period. Approved records use reviewed_at
+// (the moment the quota was credited); pending/rejected records use created_at.
+func GetQuotaApplicationSummary(applicantId *int, from, to int64) (*QuotaApplicationSummary, error) {
+	if to <= from {
+		return &QuotaApplicationSummary{}, nil
+	}
+	base := DB.Table("quota_applications AS qa")
+	if applicantId != nil {
+		base = base.Where("qa.applicant_id = ?", *applicantId)
+	}
+	period := "((qa.status = ? AND qa.reviewed_at >= ? AND qa.reviewed_at < ?) OR (qa.status <> ? AND qa.created_at >= ? AND qa.created_at < ?))"
+	args := []interface{}{QuotaApplicationStatusApproved, from, to, QuotaApplicationStatusApproved, from, to}
+	base = base.Where(period, args...)
+
+	var result QuotaApplicationSummary
+	if err := base.Select("COALESCE(SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END), 0) AS quota_amount, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS application_count, SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END) AS pending_quota, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN qa.status = ? THEN qa.quota_amount ELSE 0 END) AS rejected_quota, SUM(CASE WHEN qa.status = ? THEN 1 ELSE 0 END) AS rejected_count", QuotaApplicationStatusApproved, QuotaApplicationStatusApproved, QuotaApplicationStatusPending, QuotaApplicationStatusPending, QuotaApplicationStatusRejected, QuotaApplicationStatusRejected).Scan(&result).Error; err != nil {
+		return nil, err
+	}
+	var customerCount int64
+	customerQuery := base.Where("qa.status = ?", QuotaApplicationStatusApproved).Select("COUNT(DISTINCT qa.target_user_id)").Scan(&customerCount)
+	if customerQuery.Error != nil {
+		return nil, customerQuery.Error
+	}
+	result.CustomerCount = customerCount
+
+	salesQuery := base.Where("qa.status = ?", QuotaApplicationStatusApproved).
+		Select("qa.applicant_id, applicant.username AS applicant_username, COALESCE(SUM(qa.quota_amount), 0) AS quota_amount, COUNT(*) AS application_count, COUNT(DISTINCT qa.target_user_id) AS customer_count").
+		Joins("LEFT JOIN users AS applicant ON applicant.id = qa.applicant_id").
+		Group("qa.applicant_id, applicant.username").Order("quota_amount DESC")
+	if err := salesQuery.Scan(&result.Sales).Error; err != nil {
+		return nil, err
+	}
+
+	applicationsQuery := DB.Table("quota_applications AS qa").
+		Joins("LEFT JOIN users AS applicant ON applicant.id = qa.applicant_id").
+		Joins("LEFT JOIN users AS target ON target.id = qa.target_user_id").
+		Joins("LEFT JOIN users AS reviewer ON reviewer.id = qa.reviewed_by").
+		Where(period, args...)
+	if applicantId != nil {
+		applicationsQuery = applicationsQuery.Where("qa.applicant_id = ?", *applicantId)
+	}
+	if err := applicationsQuery.Select("qa.*, applicant.username AS applicant_username, target.username AS target_username, target.display_name AS target_display_name, reviewer.username AS reviewer_username").Order("qa.reviewed_at DESC, qa.id DESC").Limit(500).Scan(&result.Applications).Error; err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 func IsQuotaApplicationStatus(status string) bool {
 	return status == QuotaApplicationStatusPending || status == QuotaApplicationStatusApproved || status == QuotaApplicationStatusRejected
 }

@@ -23,6 +23,7 @@ import type {
   QuotaApplication,
   QuotaApplicationList,
   QuotaApplicationTarget,
+  QuotaApplicationSummary,
 } from './types'
 
 export async function listQuotaApplications(params: {
@@ -37,6 +38,21 @@ export async function listQuotaApplications(params: {
       keyword: params.keyword || undefined,
       p: params.page ?? 1,
       page_size: params.pageSize ?? 20,
+    },
+  })
+  return res.data.data
+}
+
+export async function getQuotaApplicationSummary(params: {
+  from: number
+  to: number
+  applicantId?: number
+}): Promise<QuotaApplicationSummary> {
+  const res = await api.get('/api/quota-applications/summary', {
+    params: {
+      from: params.from,
+      to: params.to,
+      applicant_id: params.applicantId || undefined,
     },
   })
   return res.data.data
