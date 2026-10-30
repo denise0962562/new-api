@@ -1,12 +1,16 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +19,34 @@ type createQuotaApplicationRequest struct {
 	QuotaAmount        int    `json:"quota_amount"`
 	InvoiceAmountCents int64  `json:"invoice_amount_cents"`
 	ApplicationInfo    string `json:"application_info"`
+	Attachments        []model.QuotaApplicationAttachment `json:"attachments"`
+}
+
+func GetQuotaApplicationR2Config(c *gin.Context) {
+	cfg := service.QuotaApplicationR2ConfigFromOptions()
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"enabled": cfg.Enabled, "endpoint": cfg.Endpoint, "region": cfg.Region, "bucket": cfg.Bucket, "public_base_url": cfg.PublicBaseURL, "access_key_id": cfg.AccessKeyID != "", "has_secret": cfg.AccessKeySecret != ""}})
+}
+
+func UpdateQuotaApplicationR2Config(c *gin.Context) {
+	var req service.QuotaApplicationR2Config
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil { common.ApiError(c, err); return }
+	current := service.QuotaApplicationR2ConfigFromOptions()
+	if req.AccessKeyID == "" { req.AccessKeyID = current.AccessKeyID }
+	if req.AccessKeySecret == "" { req.AccessKeySecret = current.AccessKeySecret }
+	if req.Region == "" { req.Region = "auto" }
+	err := model.UpdateOptionsBulk(map[string]string{"quota_application.r2.enabled": strconv.FormatBool(req.Enabled), "quota_application.r2.endpoint": strings.TrimRight(strings.TrimSpace(req.Endpoint), "/"), "quota_application.r2.region": req.Region, "quota_application.r2.bucket": strings.TrimSpace(req.Bucket), "quota_application.r2.public_base_url": strings.TrimRight(strings.TrimSpace(req.PublicBaseURL), "/"), "quota_application.r2.access_key_id": req.AccessKeyID, "quota_application.r2.access_key_secret": req.AccessKeySecret})
+	if err != nil { common.ApiError(c, err); return }
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func PresignQuotaApplicationAttachment(c *gin.Context) {
+	var req struct { FileName string `json:"file_name"`; ContentType string `json:"content_type"` }
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil { common.ApiError(c, err); return }
+	if !strings.HasPrefix(req.ContentType, "image/") || req.FileName == "" { common.ApiErrorMsg(c, "only image uploads are allowed"); return }
+	key := fmt.Sprintf("quota-applications/%d/%d-%d-%s", time.Now().UTC().Year(), c.GetInt("id"), time.Now().UnixNano(), strings.ReplaceAll(filepath.Base(req.FileName), " ", "_"))
+	url, err := service.PresignQuotaApplicationUpload(service.QuotaApplicationR2ConfigFromOptions(), key, req.ContentType)
+	if err != nil { common.ApiError(c, err); return }
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"object_key": key, "upload_url": url, "public_url": service.R2ObjectURL(service.QuotaApplicationR2ConfigFromOptions(), key)}})
 }
 
 type reviewQuotaApplicationRequest struct {
@@ -48,6 +80,8 @@ func ListQuotaApplications(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	config := service.QuotaApplicationR2ConfigFromOptions()
+	for i := range items { for j := range items[i].Attachments { items[i].Attachments[j].PublicURL = service.R2ObjectURL(config, items[i].Attachments[j].ObjectKey) } }
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{
 		"items": items, "total": total, "page": pageInfo.Page, "page_size": pageInfo.PageSize,
 	}})
@@ -84,6 +118,8 @@ func GetQuotaApplication(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	config := service.QuotaApplicationR2ConfigFromOptions()
+	for i := range application.Attachments { application.Attachments[i].PublicURL = service.R2ObjectURL(config, application.Attachments[i].ObjectKey) }
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": application})
 }
 
@@ -100,10 +136,15 @@ func CreateQuotaApplication(c *gin.Context) {
 		InvoiceAmountCents: req.InvoiceAmountCents,
 		ApplicationInfo:    req.ApplicationInfo,
 	}
+	if len(req.Attachments) > 3 { common.ApiErrorMsg(c, "at most 3 attachments are allowed"); return }
+	for i := range req.Attachments {
+		if req.Attachments[i].FileSize <= 0 || req.Attachments[i].FileSize > 10*1024*1024 || !strings.HasPrefix(req.Attachments[i].ContentType, "image/") { common.ApiErrorMsg(c, "each attachment must be an image no larger than 10 MB"); return }
+	}
 	if err := model.CreateQuotaApplication(application); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	for i := range req.Attachments { req.Attachments[i].ApplicationId = application.Id; req.Attachments[i].Id = 0; if err := model.DB.Create(&req.Attachments[i]).Error; err != nil { common.ApiError(c, err); return } }
 	recordManageAuditFor(c, application.TargetUserId, "quota_application.create", map[string]interface{}{
 		"application_id": application.Id,
 		"quota":          application.QuotaAmount,

@@ -291,6 +291,7 @@ func migrateDB() error {
 		&ManualInvoiceCredit{},
 		&QuotaAdjustment{},
 		&QuotaApplication{},
+		&QuotaApplicationAttachment{},
 		&QuotaData{},
 		&Task{},
 		&Model{},

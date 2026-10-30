@@ -182,6 +182,13 @@ func InitOptionMap() {
 	// script-review console (generate) and persisted here so it survives restarts.
 	common.OptionMap["ScriptSigningKeyId"] = common.ScriptSigningKeyId
 	common.OptionMap["ScriptSigningKeySeed"] = common.ScriptSigningKeySeed
+	common.OptionMap["quota_application.r2.enabled"] = "false"
+	common.OptionMap["quota_application.r2.endpoint"] = ""
+	common.OptionMap["quota_application.r2.region"] = "auto"
+	common.OptionMap["quota_application.r2.bucket"] = ""
+	common.OptionMap["quota_application.r2.public_base_url"] = ""
+	common.OptionMap["quota_application.r2.access_key_id"] = ""
+	common.OptionMap["quota_application.r2.access_key_secret"] = ""
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()

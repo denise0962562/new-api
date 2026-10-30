@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { SystemInfoSection } from '../general/system-info-section'
+import { R2StorageSection } from './r2-storage-section'
 import {
   parseHeaderNavModules,
   parseSidebarModulesAdmin,
@@ -30,6 +31,11 @@ import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
 const SITE_SECTIONS = [
+  {
+    id: 'r2-storage',
+    titleKey: 'R2 attachment storage',
+    build: () => <R2StorageSection />,
+  },
   {
     id: 'system-info',
     titleKey: 'System Information',

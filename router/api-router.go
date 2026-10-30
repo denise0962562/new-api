@@ -169,6 +169,9 @@ func SetApiRouter(router *gin.Engine) {
 		quotaApplicationRoute := apiRouter.Group("/quota-applications")
 		quotaApplicationRoute.Use(middleware.AdminAuth())
 		{
+			quotaApplicationRoute.GET("/r2/config", middleware.RootAuth(), controller.GetQuotaApplicationR2Config)
+			quotaApplicationRoute.PUT("/r2/config", middleware.RootAuth(), controller.UpdateQuotaApplicationR2Config)
+			quotaApplicationRoute.POST("/attachments/presign", middleware.RequirePermission(authz.QuotaApplicationApply), controller.PresignQuotaApplicationAttachment)
 			quotaApplicationRoute.GET("", middleware.RequirePermission(authz.QuotaApplicationApply), controller.ListQuotaApplications)
 			quotaApplicationRoute.GET("/summary", middleware.RequirePermission(authz.QuotaApplicationApply), controller.QuotaApplicationSummary)
 			quotaApplicationRoute.GET("/users/search", middleware.RequirePermission(authz.QuotaApplicationApply), controller.SearchQuotaApplicationTargets)

@@ -37,7 +37,10 @@ export interface QuotaApplication {
   created_at: number
   reviewed_at: number
   updated_at: number
+  attachments?: QuotaApplicationAttachment[]
 }
+
+export interface QuotaApplicationAttachment { id: number; object_key: string; file_name: string; content_type: string; file_size: number; public_url?: string }
 
 export interface QuotaApplicationTarget {
   id: number
@@ -78,4 +81,5 @@ export interface CreateQuotaApplicationPayload {
   quota_amount: number
   invoice_amount_cents: number
   application_info: string
+  attachments?: Omit<QuotaApplicationAttachment, 'id'>[]
 }

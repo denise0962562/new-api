@@ -64,6 +64,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createQuotaApplication,
+  presignQuotaApplicationAttachment,
   getQuotaApplicationSummary,
   listQuotaApplications,
   reviewQuotaApplication,
@@ -251,6 +252,18 @@ function ApplicationDetails(props: {
               {item.application_info}
             </p>
           </div>
+          {item.attachments && item.attachments.length > 0 && (
+            <div>
+              <p className='text-muted-foreground mb-2'>{t('Supporting screenshots')}</p>
+              <div className='grid grid-cols-3 gap-2'>
+                {item.attachments.map((attachment) => (
+                  <a key={attachment.id} href={attachment.public_url || '#'} target='_blank' rel='noreferrer' className='bg-muted block overflow-hidden rounded-md border'>
+                    <img src={attachment.public_url} alt={attachment.file_name} className='h-28 w-full object-cover' />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
           {item.status !== 'pending' && (
             <div className='border-t pt-4'>
               <p className='font-medium'>{t('Review result')}</p>
@@ -290,6 +303,7 @@ function CreateApplicationDialog(props: {
   const [amount, setAmount] = useState('')
   const [invoiceAmount, setInvoiceAmount] = useState('')
   const [applicationInfo, setApplicationInfo] = useState('')
+  const [attachments, setAttachments] = useState<File[]>([])
   const [submitting, setSubmitting] = useState(false)
   const { meta: currencyMeta } = getCurrencyDisplay()
   const currencyLabel = getCurrencyLabel()
@@ -306,6 +320,7 @@ function CreateApplicationDialog(props: {
     setAmount('')
     setInvoiceAmount('')
     setApplicationInfo('')
+    setAttachments([])
   }
   const close = () => {
     reset()
@@ -332,11 +347,19 @@ function CreateApplicationDialog(props: {
     }
     setSubmitting(true)
     try {
+      const uploaded = []
+      for (const file of attachments) {
+        const presigned = await presignQuotaApplicationAttachment(file)
+        const upload = await fetch(presigned.upload_url, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+        if (!upload.ok) throw new Error(t('Attachment upload failed'))
+        uploaded.push({ object_key: presigned.object_key, file_name: file.name, content_type: file.type, file_size: file.size, public_url: presigned.public_url })
+      }
       const result = await createQuotaApplication({
         target_user_id: selectedUser.id,
         quota_amount: quotaAmount,
         invoice_amount_cents: invoiceAmountCents,
         application_info: applicationInfo.trim(),
+        attachments: uploaded,
       })
       if (result.success) {
         toast.success(t('Quota application submitted'))
@@ -443,6 +466,17 @@ function CreateApplicationDialog(props: {
               ))}
             </div>
           ) : null}
+        </div>
+
+        <div className='space-y-2'>
+          <Label>{t('Supporting screenshots (optional)')}</Label>
+          <Input type='file' accept='image/*' multiple onChange={(event) => {
+            const selected = [...(event.target.files ?? [])]
+            if (selected.length > 3 || selected.some((file) => file.size > 10 * 1024 * 1024)) { toast.error(t('Select up to 3 images, each no larger than 10 MB')); return }
+            setAttachments(selected)
+          }} />
+          <p className='text-muted-foreground text-xs'>{t('Upload 0 to 3 payment or invoice screenshots. Each image must be no larger than 10 MB.')}</p>
+          {attachments.length > 0 && <div className='text-muted-foreground text-xs'>{attachments.map((file) => `${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`).join('、')}</div>}
         </div>
 
         <div className='grid gap-4 sm:grid-cols-2'>

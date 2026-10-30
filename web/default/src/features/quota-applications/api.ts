@@ -73,6 +73,11 @@ export async function createQuotaApplication(
   return (await api.post('/api/quota-applications', payload)).data
 }
 
+export async function presignQuotaApplicationAttachment(file: File) {
+  const res = await api.post('/api/quota-applications/attachments/presign', { file_name: file.name, content_type: file.type })
+  return res.data.data as { object_key: string; upload_url: string; public_url: string }
+}
+
 export async function reviewQuotaApplication(
   id: number,
   approved: boolean,

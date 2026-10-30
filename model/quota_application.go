@@ -34,6 +34,7 @@ type QuotaApplication struct {
 	CreatedAt          int64  `json:"created_at" gorm:"autoCreateTime;index"`
 	ReviewedAt         int64  `json:"reviewed_at"`
 	UpdatedAt          int64  `json:"updated_at" gorm:"autoUpdateTime"`
+	Attachments        []QuotaApplicationAttachment `json:"attachments,omitempty" gorm:"-"`
 }
 
 type QuotaApplicationTarget struct {
@@ -190,6 +191,7 @@ func ListQuotaApplications(applicantId *int, status, keyword string, offset, lim
 	var applications []QuotaApplication
 	err := query.Select("qa.*, applicant.username AS applicant_username, target.username AS target_username, target.display_name AS target_display_name, reviewer.username AS reviewer_username").
 		Order("qa.id DESC").Offset(offset).Limit(limit).Scan(&applications).Error
+	for i := range applications { DB.Where("application_id = ?", applications[i].Id).Order("sort_order ASC, id ASC").Find(&applications[i].Attachments) }
 	return applications, total, err
 }
 
@@ -210,6 +212,7 @@ func GetQuotaApplication(id int, applicantId *int) (*QuotaApplication, error) {
 	if application.Id == 0 {
 		return nil, gorm.ErrRecordNotFound
 	}
+	DB.Where("application_id = ?", application.Id).Order("sort_order ASC, id ASC").Find(&application.Attachments)
 	return &application, nil
 }
 
