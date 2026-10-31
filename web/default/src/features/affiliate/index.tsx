@@ -21,6 +21,7 @@ import { UserConsumptionDialog } from '@/features/users/components/user-consumpt
 import type { User } from '@/features/users/types'
 import { api } from '@/lib/api'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
+import { useAuthStore } from '@/stores/auth-store'
 
 type AffiliateUser = {
   id: number
@@ -42,6 +43,7 @@ type AffiliateDialog =
   | { type: 'consumption'; user: AffiliateUser }
   | { type: 'transfer'; user: AffiliateUser }
   | { type: 'groups'; user: AffiliateUser }
+  | { type: 'settlement'; user: AffiliateUser }
   | null
 
 async function getAffiliateUsers(keyword: string) {
@@ -62,6 +64,7 @@ const toUser = (user: AffiliateUser): User => ({
 
 export function Affiliate() {
   const { t } = useTranslation()
+  const authUser = useAuthStore((s) => s.auth.user)
   const [keyword, setKeyword] = useState('')
   const [filter, setFilter] = useState('')
   const [dialog, setDialog] = useState<AffiliateDialog>(null)
@@ -69,11 +72,42 @@ export function Affiliate() {
   const [groups, setGroups] = useState<string[]>([])
   const [availableGroups, setAvailableGroups] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
+  const [settlementEnd, setSettlementEnd] = useState(() => new Date(Date.now() - 86400000).toISOString().slice(0, 10))
+  const [settlementPreview, setSettlementPreview] = useState<any>(null)
+  const [settlementRemark, setSettlementRemark] = useState(() => localStorage.getItem('affiliate.settlement.remark') || '')
+  const [settlementAttachments, setSettlementAttachments] = useState<string[]>([])
+  const [ruleSalesId, setRuleSalesId] = useState('')
+  const [ruleGroup, setRuleGroup] = useState('')
+  const [ruleRate, setRuleRate] = useState('1')
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['affiliate-users', filter],
     queryFn: () => getAffiliateUsers(filter),
   })
+
+  const { data: rulesData } = useQuery({ queryKey: ['affiliate-rules'], queryFn: async () => (await api.get('/api/user/affiliate/commission-rules')).data })
+  const { data: settlementsData, refetch: refetchSettlements } = useQuery({ queryKey: ['affiliate-settlements'], queryFn: async () => (await api.get('/api/user/affiliate/settlements')).data })
+  const loadSettlementPreview = async (user: AffiliateUser, endDate: string) => {
+    const end = Math.floor(new Date(`${endDate}T23:59:59`).getTime() / 1000) + 1
+    const res = await api.get(`/api/user/affiliate/users/${user.id}/settlement-preview`, { params: { end_at: end } })
+    if (res.data.success) setSettlementPreview(res.data.data)
+  }
+  const submitSettlement = async () => {
+    if (dialog?.type !== 'settlement' || !settlementPreview?.items?.length) return
+    setSubmitting(true)
+    try {
+      const res = await api.post('/api/user/affiliate/settlements', { target_user_id: dialog.user.id, start_at: settlementPreview.start_at, end_at: settlementPreview.end_at, total_quota: settlementPreview.total_quota, total_commission: settlementPreview.total_commission, items: settlementPreview.items, remark: settlementRemark, attachment_keys: settlementAttachments })
+      if (!res.data.success) { toast.error(res.data.message || t('Submission failed')); return }
+      localStorage.setItem('affiliate.settlement.remark', settlementRemark)
+      toast.success(t('Settlement application submitted')); setDialog(null); setSettlementPreview(null); setSettlementAttachments([])
+    } finally { setSubmitting(false) }
+  }
+  const saveRule = async () => {
+    const rate = Number(ruleRate)
+    if (!Number.isFinite(rate) || rate < 0.1 || rate > 5 || !ruleSalesId || !ruleGroup) { toast.error(t('Rate must be between 0.1% and 5%')); return }
+    const res = await api.post('/api/user/affiliate/commission-rules', { sales_id: Number(ruleSalesId), group_name: ruleGroup, rate_bps: Math.round(rate * 100) })
+    if (res.data.success) { toast.success(t('Saved')); setRuleGroup(''); await refetch() } else toast.error(res.data.message || t('Save failed'))
+  }
 
   const loadConsumption = useCallback(
     async (startTimestamp: number, endTimestamp: number) => {
@@ -192,6 +226,9 @@ export function Affiliate() {
           <Button size='sm' variant='outline' onClick={() => openGroups(user)}>
             {t('Add groups')}
           </Button>
+          <Button size='sm' variant='outline' onClick={() => { setSettlementPreview(null); setSettlementAttachments([]); setDialog({ type: 'settlement', user }); loadSettlementPreview(user, settlementEnd) }}>
+            {t('Apply settlement')}
+          </Button>
         </div>
       </td>
     </tr>
@@ -221,6 +258,7 @@ export function Affiliate() {
           {t('My direct subordinates')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
+          {authUser?.role === 100 && <div className='mb-4 rounded-md border p-3'><div className='mb-2 font-medium'>{t('Sales commission rules')}</div><div className='flex flex-wrap gap-2'><Input className='w-28' placeholder={t('Sales ID')} value={ruleSalesId} onChange={(e) => setRuleSalesId(e.target.value)} /><Input className='w-36' placeholder={t('Group')} value={ruleGroup} onChange={(e) => setRuleGroup(e.target.value)} /><Input className='w-28' type='number' min='0.1' max='5' step='0.1' placeholder='%' value={ruleRate} onChange={(e) => setRuleRate(e.target.value)} /><Button onClick={saveRule}>{t('Save rule')}</Button></div>{(rulesData?.data || []).map((r: any) => <div key={r.id} className='text-muted-foreground mt-2 text-xs'>{r.sales_id} · {r.group_name} · {r.rate_bps / 100}%</div>)}</div>}
           <div className='mb-4 flex gap-2'>
             <Input
               value={keyword}
@@ -232,6 +270,7 @@ export function Affiliate() {
             />
             <Button onClick={() => setFilter(keyword)}>{t('Search')}</Button>
           </div>
+          <div className='mb-4 rounded-md border p-3'><div className='mb-2 font-medium'>{t('Settlement applications')}</div>{(settlementsData?.data || []).length === 0 ? <div className='text-muted-foreground text-sm'>{t('No settlement applications')}</div> : <div className='space-y-1 text-sm'>{(settlementsData?.data || []).map((a: any) => <div key={a.id} className='flex flex-wrap items-center justify-between gap-2 border-b py-2'><span>#{a.id} · {a.target_user_id}</span><span>{formatQuota(a.total_commission)} · {t(`Settlement ${a.status}`)}</span>{authUser?.role === 100 && a.status === 'pending' && <span className='flex gap-1'><Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: true }); refetchSettlements() }}>{t('Approve')}</Button><Button size='sm' variant='outline' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: false }); refetchSettlements() }}>{t('Reject')}</Button></span>}{authUser?.role === 100 && a.status === 'approved' && <Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { paid: true }); refetchSettlements() }}>{t('Mark as paid')}</Button>}</div>)}</div>}</div>
           <div className='overflow-auto rounded-md border'>
             <table className='w-full min-w-[1100px] text-sm'>
               <thead>
@@ -289,6 +328,15 @@ export function Affiliate() {
               'The amount is deducted from your balance and credited to the subordinate.'
             )}
           </p>
+        </div>
+      </Dialog>
+
+      <Dialog open={dialog?.type === 'settlement'} onOpenChange={(open) => !open && setDialog(null)} title={t('Apply settlement')} description={dialog?.user.username} contentClassName='sm:max-w-3xl' footer={<Button onClick={submitSettlement} disabled={submitting || !settlementPreview?.items?.length}>{t('Submit settlement')}</Button>}>
+        <div className='space-y-4'>
+          <div><label className='text-sm font-medium'>{t('Settlement end date')}</label><Input type='date' max={new Date(Date.now() - 86400000).toISOString().slice(0, 10)} value={settlementEnd} onChange={(e) => { setSettlementEnd(e.target.value); if (dialog?.type === 'settlement') loadSettlementPreview(dialog.user, e.target.value) }} /></div>
+          {settlementPreview?.items?.length ? <div className='rounded border p-3'><div className='mb-2 text-sm font-medium'>{t('Eligible group consumption')}</div>{settlementPreview.items.map((item: any) => <div key={item.group_name} className='flex justify-between border-b py-2 text-sm'><span>{item.group_name} · {item.rate_bps / 100}%</span><span>{formatQuota(item.quota)} → {formatQuota(item.commission)}</span></div>)}<div className='pt-2 text-right font-semibold'>{t('Total')}: {formatQuota(settlementPreview.total_commission)}</div></div> : <p className='text-muted-foreground text-sm'>{t('No eligible consumption')}</p>}
+          <div><label className='text-sm font-medium'>{t('Calculation remark')}</label><textarea className='border-input bg-background min-h-24 w-full rounded-md border p-2 text-sm' value={settlementRemark} onChange={(e) => setSettlementRemark(e.target.value)} placeholder={t('Enter calculation remark')} /></div>
+          <div><label className='text-sm font-medium'>{t('Payment method image')}</label><Input type='file' accept='image/*' multiple onChange={async (e) => { const files = Array.from(e.target.files || []).slice(0, 3); const keys: string[] = []; for (const file of files) { if (file.size > 10 * 1024 * 1024) { toast.error(t('Attachment exceeds 10 MB')); continue }; const body = new FormData(); body.append('file', file); const res = await api.post('/api/user/affiliate/settlement-attachments/upload', body, { headers: { 'Content-Type': 'multipart/form-data' } }); if (res.data.success) keys.push(res.data.data.object_key) }; setSettlementAttachments(keys) }} /><div className='text-muted-foreground text-xs'>{t('Optional, up to 3 images, 10 MB each')}</div></div>
         </div>
       </Dialog>
 
