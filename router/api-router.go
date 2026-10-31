@@ -91,6 +91,7 @@ func SetApiRouter(router *gin.Engine) {
 			selfRoute.POST("/affiliate/users/:id/groups", controller.AddAffiliateGroups)
 			selfRoute.GET("/affiliate/commission-rules", controller.ListAffiliateRules)
 			selfRoute.POST("/affiliate/commission-rules", middleware.RootAuth(), controller.SaveAffiliateRule)
+			selfRoute.GET("/affiliate/commission-rules/users", middleware.RootAuth(), controller.SearchAffiliateSalesUsers)
 			selfRoute.GET("/affiliate/users/:id/settlement-preview", controller.PreviewAffiliateSettlement)
 			selfRoute.POST("/affiliate/settlements", controller.CreateAffiliateSettlement)
 			selfRoute.POST("/affiliate/settlement-attachments/upload", controller.UploadQuotaApplicationAttachment)

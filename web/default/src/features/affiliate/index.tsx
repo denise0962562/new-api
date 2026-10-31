@@ -17,6 +17,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UserConsumptionDialog } from '@/features/users/components/user-consumption-dialog'
 import type { User } from '@/features/users/types'
 import { api } from '@/lib/api'
@@ -76,16 +77,25 @@ export function Affiliate() {
   const [settlementPreview, setSettlementPreview] = useState<any>(null)
   const [settlementRemark, setSettlementRemark] = useState(() => localStorage.getItem('affiliate.settlement.remark') || '')
   const [settlementAttachments, setSettlementAttachments] = useState<string[]>([])
-  const [ruleSalesId, setRuleSalesId] = useState('')
+  const [ruleSalesSearch, setRuleSalesSearch] = useState('')
+  const [ruleSalesResults, setRuleSalesResults] = useState<any[]>([])
+  const [selectedRuleSales, setSelectedRuleSales] = useState<any>(null)
   const [ruleGroup, setRuleGroup] = useState('')
   const [ruleRate, setRuleRate] = useState('1')
+  const [ruleEnabled, setRuleEnabled] = useState(true)
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+  const [ruleFilter, setRuleFilter] = useState('')
+  const [activeTab, setActiveTab] = useState('subordinates')
+  const isRoot = authUser?.role === 100
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['affiliate-users', filter],
     queryFn: () => getAffiliateUsers(filter),
   })
 
-  const { data: rulesData } = useQuery({ queryKey: ['affiliate-rules'], queryFn: async () => (await api.get('/api/user/affiliate/commission-rules')).data })
+  const { data: rulesData } = useQuery({ queryKey: ['affiliate-rules', authUser?.id], queryFn: async () => (await api.get('/api/user/affiliate/commission-rules', { params: isRoot ? { sales_id: authUser?.id } : undefined })).data })
+  const { data: adminRulesData, refetch: refetchAdminRules } = useQuery({ queryKey: ['affiliate-rules-admin'], queryFn: async () => (await api.get('/api/user/affiliate/commission-rules')).data, enabled: isRoot })
+  const { data: groupsResponse } = useQuery({ queryKey: ['affiliate-configurable-groups'], queryFn: async () => (await api.get('/api/group/')).data, enabled: isRoot })
   const { data: settlementsData, refetch: refetchSettlements } = useQuery({ queryKey: ['affiliate-settlements'], queryFn: async () => (await api.get('/api/user/affiliate/settlements')).data })
   const loadSettlementPreview = async (user: AffiliateUser, endDate: string) => {
     const end = Math.floor(new Date(`${endDate}T23:59:59`).getTime() / 1000) + 1
@@ -104,10 +114,19 @@ export function Affiliate() {
   }
   const saveRule = async () => {
     const rate = Number(ruleRate)
-    if (!Number.isFinite(rate) || rate < 0.1 || rate > 5 || !ruleSalesId || !ruleGroup) { toast.error(t('Rate must be between 0.1% and 5%')); return }
-    const res = await api.post('/api/user/affiliate/commission-rules', { sales_id: Number(ruleSalesId), group_name: ruleGroup, rate_bps: Math.round(rate * 100) })
-    if (res.data.success) { toast.success(t('Saved')); setRuleGroup(''); await refetch() } else toast.error(res.data.message || t('Save failed'))
+    if (!Number.isFinite(rate) || rate < 0.1 || rate > 5 || !selectedRuleSales || !ruleGroup) { toast.error(t('Rate must be between 0.1% and 5%')); return }
+    const res = await api.post('/api/user/affiliate/commission-rules', { sales_id: selectedRuleSales.id, group_name: ruleGroup, rate_bps: Math.round(rate * 100), enabled: ruleEnabled })
+    if (res.data.success) { toast.success(t('Saved')); setRuleGroup(''); setEditingRuleId(null); setRuleEnabled(true); await Promise.all([refetchAdminRules(), refetch()]) } else toast.error(res.data.message || t('Save failed'))
   }
+  const searchRuleSales = async () => {
+    if (!ruleSalesSearch.trim()) { setRuleSalesResults([]); return }
+    const res = await api.get('/api/user/affiliate/commission-rules/users', { params: { keyword: ruleSalesSearch.trim() } })
+    setRuleSalesResults(res.data.data || [])
+  }
+  const beginEditRule = (rule: any) => {
+    setEditingRuleId(rule.id); setSelectedRuleSales({ id: rule.sales_id, username: rule.sales_username, display_name: rule.sales_display_name }); setRuleSalesSearch(`${rule.sales_display_name || rule.sales_username} (#${rule.sales_id})`); setRuleGroup(rule.group_name); setRuleRate(String(rule.rate_bps / 100)); setRuleEnabled(rule.enabled)
+  }
+  const resetRuleForm = () => { setEditingRuleId(null); setSelectedRuleSales(null); setRuleSalesSearch(''); setRuleGroup(''); setRuleRate('1'); setRuleEnabled(true); setRuleSalesResults([]) }
 
   const loadConsumption = useCallback(
     async (startTimestamp: number, endTimestamp: number) => {
@@ -258,7 +277,34 @@ export function Affiliate() {
           {t('My direct subordinates')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
-          {authUser?.role === 100 && <div className='mb-4 rounded-md border p-3'><div className='mb-2 font-medium'>{t('Sales commission rules')}</div><div className='flex flex-wrap gap-2'><Input className='w-28' placeholder={t('Sales ID')} value={ruleSalesId} onChange={(e) => setRuleSalesId(e.target.value)} /><Input className='w-36' placeholder={t('Group')} value={ruleGroup} onChange={(e) => setRuleGroup(e.target.value)} /><Input className='w-28' type='number' min='0.1' max='5' step='0.1' placeholder='%' value={ruleRate} onChange={(e) => setRuleRate(e.target.value)} /><Button onClick={saveRule}>{t('Save rule')}</Button></div>{(rulesData?.data || []).map((r: any) => <div key={r.id} className='text-muted-foreground mt-2 text-xs'>{r.sales_id} · {r.group_name} · {r.rate_bps / 100}%</div>)}</div>}
+          {isRoot && <Tabs value={activeTab} onValueChange={setActiveTab} className='mb-4'>
+            <TabsList><TabsTrigger value='subordinates'>{t('Direct subordinates')}</TabsTrigger><TabsTrigger value='rules'>{t('Sales commission rules')}</TabsTrigger></TabsList>
+          </Tabs>}
+          {isRoot && activeTab === 'rules' && <div className='space-y-4'>
+            <section className='space-y-3 rounded-md border p-4'>
+              <div className='font-medium'>{editingRuleId ? t('Edit commission rule') : t('Add commission rule')}</div>
+              <div className='grid gap-3 md:grid-cols-2'>
+                <div className='space-y-2'>
+                  <label className='text-sm font-medium'>{t('Sales user')}</label>
+                  {selectedRuleSales ? <div className='flex items-center justify-between rounded-md border px-3 py-2 text-sm'><span>{selectedRuleSales.display_name || selectedRuleSales.username} · {selectedRuleSales.username} · #{selectedRuleSales.id}</span><Button size='sm' variant='ghost' onClick={() => { setSelectedRuleSales(null); setRuleSalesSearch('') }}>{t('Change')}</Button></div> : <>
+                    <div className='flex gap-2'><Input value={ruleSalesSearch} onChange={(e) => setRuleSalesSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && searchRuleSales()} placeholder={t('Search any user by ID, username, or display name')} /><Button variant='outline' onClick={searchRuleSales}>{t('Search')}</Button></div>
+                    {ruleSalesResults.length > 0 && <div className='max-h-48 overflow-auto rounded-md border'>{ruleSalesResults.map((u) => <button type='button' key={u.id} className='hover:bg-muted flex w-full items-center justify-between border-b p-2 text-left text-sm last:border-0' onClick={() => { setSelectedRuleSales(u); setRuleSalesSearch(`${u.display_name || u.username} (#${u.id})`); setRuleSalesResults([]) }}><span>{u.display_name || u.username} · {u.username} · #{u.id}</span><span className='text-muted-foreground'>{t('Role {{role}}', { role: u.role })}</span></button>)}</div>}
+                  </>}
+                </div>
+                <div className='space-y-2'><label className='text-sm font-medium'>{t('Group')}</label><select className='border-input bg-background h-9 w-full rounded-md border px-3 text-sm' value={ruleGroup} onChange={(e) => setRuleGroup(e.target.value)}><option value=''>{t('Select a group')}</option>{(Array.isArray(groupsResponse?.data) ? groupsResponse.data : []).map((g: string) => <option key={g} value={g}>{g}</option>)}</select></div>
+                <div className='space-y-2'><label className='text-sm font-medium'>{t('Commission rate (%)')}</label><Input type='number' min='0.1' max='5' step='0.1' value={ruleRate} onChange={(e) => setRuleRate(e.target.value)} /><p className='text-muted-foreground text-xs'>{t('Rate must be between 0.1% and 5%')}</p></div>
+                <label className='flex items-center gap-2 self-center text-sm'><input type='checkbox' checked={ruleEnabled} onChange={(e) => setRuleEnabled(e.target.checked)} />{t('Enabled')}</label>
+              </div>
+              <div className='flex gap-2'><Button onClick={saveRule}>{editingRuleId ? t('Save changes') : t('Save rule')}</Button>{editingRuleId && <Button variant='outline' onClick={resetRuleForm}>{t('Cancel')}</Button>}</div>
+            </section>
+            <section className='space-y-3 rounded-md border p-4'>
+              <div className='flex flex-wrap items-center justify-between gap-2'><h3 className='font-medium'>{t('Configured commission rules')}</h3><Input className='max-w-xs' value={ruleFilter} onChange={(e) => setRuleFilter(e.target.value)} placeholder={t('Search sales or group')} /></div>
+              <div className='overflow-auto'><table className='w-full min-w-[720px] text-sm'><thead><tr className='border-b text-left'><th className='p-2'>{t('Sales user')}</th><th>{t('Group')}</th><th>{t('Commission rate')}</th><th>{t('Status')}</th><th>{t('Updated at')}</th><th>{t('Actions')}</th></tr></thead><tbody>{(adminRulesData?.data || []).filter((r: any) => `${r.sales_username} ${r.sales_display_name} ${r.sales_id} ${r.group_name}`.toLowerCase().includes(ruleFilter.toLowerCase())).map((r: any) => <tr key={r.id} className='border-b'><td className='p-2'>{r.sales_display_name || r.sales_username} · {r.sales_username} · #{r.sales_id}</td><td>{r.group_name}</td><td>{(r.rate_bps / 100).toFixed(2)}%</td><td>{r.enabled ? t('Enabled') : t('Disabled')}</td><td>{r.updated_at ? new Date(r.updated_at * 1000).toLocaleString() : '-'}</td><td><Button size='sm' variant='outline' onClick={() => beginEditRule(r)}>{t('Edit')}</Button></td></tr>)}{(adminRulesData?.data || []).length === 0 && <tr><td colSpan={6} className='text-muted-foreground p-6 text-center'>{t('No commission rules')}</td></tr>}</tbody></table></div>
+              <p className='text-muted-foreground text-xs'>{t('Rule changes only apply to new settlement applications.')}</p>
+            </section>
+          </div>}
+          {(!isRoot || activeTab === 'subordinates') && <>
+          {!isRoot && <section className='mb-4 rounded-md border p-4'><h3 className='mb-2 font-medium'>{t('My commission rates')}</h3>{(rulesData?.data || []).length ? <div className='flex flex-wrap gap-2'>{(rulesData?.data || []).filter((r: any) => r.enabled).map((r: any) => <div key={r.id} className='rounded-md bg-muted px-3 py-2 text-sm'><span className='font-medium'>{r.group_name}</span><span className='ml-2'>{(r.rate_bps / 100).toFixed(2)}%</span></div>)}</div> : <p className='text-muted-foreground text-sm'>{t('No commission rules are configured for you. Please contact the root administrator.')}</p>}<p className='text-muted-foreground mt-2 text-xs'>{t('Only configured active groups are included in settlement applications.')}</p></section>}
           <div className='mb-4 flex gap-2'>
             <Input
               value={keyword}
@@ -287,9 +333,10 @@ export function Affiliate() {
                   <th>{t('Actions')}</th>
                 </tr>
               </thead>
-              <tbody>{tableBody}</tbody>
-            </table>
+            <tbody>{tableBody}</tbody>
+          </table>
           </div>
+          </>}
         </SectionPageLayout.Content>
       </SectionPageLayout>
 

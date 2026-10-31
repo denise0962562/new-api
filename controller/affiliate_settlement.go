@@ -13,7 +13,34 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func ListAffiliateRules(c *gin.Context) { salesID := c.GetInt("id"); if c.GetInt("role") == common.RoleRootUser { if v,_:=strconv.Atoi(c.Query("sales_id")); v>0 { salesID=v } }; var rows []model.AffiliateCommissionRule; q:=model.DB.Order("sales_id, group_name"); if salesID>0 { q=q.Where("sales_id = ?",salesID) }; if err:=q.Find(&rows).Error; err!=nil { common.ApiError(c,err); return }; c.JSON(http.StatusOK,gin.H{"success":true,"data":rows}) }
+func ListAffiliateRules(c *gin.Context) {
+	salesID := c.GetInt("id")
+	if c.GetInt("role") == common.RoleRootUser {
+		salesID, _ = strconv.Atoi(c.Query("sales_id"))
+	}
+	type ruleRow struct {
+		model.AffiliateCommissionRule
+		SalesUsername string `json:"sales_username"`
+		SalesDisplayName string `json:"sales_display_name"`
+	}
+	var rows []ruleRow
+	q := model.DB.Table("affiliate_commission_rules AS r").Select("r.*, u.username AS sales_username, u.display_name AS sales_display_name").Joins("LEFT JOIN users u ON u.id = r.sales_id").Order("r.sales_id, r.group_name")
+	if salesID > 0 { q = q.Where("r.sales_id = ?", salesID) }
+	if err := q.Scan(&rows).Error; err != nil { common.ApiError(c, err); return }
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": rows})
+}
+
+func SearchAffiliateSalesUsers(c *gin.Context) {
+	if c.GetInt("role") != common.RoleRootUser { common.ApiErrorMsg(c, "root permission required"); return }
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	if keyword == "" { c.JSON(http.StatusOK, gin.H{"success": true, "data": []interface{}{}}); return }
+	query := model.DB.Model(&model.User{}).Select("id, username, display_name, role, status").Where("deleted_at IS NULL")
+	like := "%" + keyword + "%"
+	if id, err := strconv.Atoi(keyword); err == nil { query = query.Where("id = ? OR username LIKE ? OR display_name LIKE ?", id, like, like) } else { query = query.Where("username LIKE ? OR display_name LIKE ?", like, like) }
+	var users []struct { Id int `json:"id"`; Username string `json:"username"`; DisplayName string `json:"display_name"`; Role int `json:"role"`; Status int `json:"status"` }
+	if err := query.Order("id DESC").Limit(20).Find(&users).Error; err != nil { common.ApiError(c, err); return }
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": users})
+}
 
 func SaveAffiliateRule(c *gin.Context) { var req struct{ SalesID int `json:"sales_id"`; GroupName string `json:"group_name"`; RateBps int `json:"rate_bps"`; Enabled *bool `json:"enabled"`; Remark string `json:"remark"` }; if err:=common.DecodeJson(c.Request.Body,&req); err!=nil { common.ApiError(c,err); return }; if c.GetInt("role") != common.RoleRootUser { common.ApiErrorMsg(c,"root permission required"); return }; if req.SalesID<=0 || strings.TrimSpace(req.GroupName)=="" { common.ApiErrorMsg(c,"sales and group are required"); return }; if err:=model.ValidateAffiliateRate(req.RateBps); err!=nil { common.ApiError(c,err); return }; enabled:=true; if req.Enabled!=nil { enabled=*req.Enabled }; var row model.AffiliateCommissionRule; err:=model.DB.Where("sales_id = ? AND group_name = ?",req.SalesID,strings.TrimSpace(req.GroupName)).First(&row).Error; if err==nil { row.RateBps=req.RateBps; row.Enabled=enabled; row.Remark=req.Remark; err=model.DB.Save(&row).Error } else { row=model.AffiliateCommissionRule{SalesId:req.SalesID,GroupName:strings.TrimSpace(req.GroupName),RateBps:req.RateBps,Enabled:enabled,Remark:req.Remark}; err=model.DB.Create(&row).Error }; if err!=nil { common.ApiError(c,err); return }; c.JSON(http.StatusOK,gin.H{"success":true,"data":row}) }
 
