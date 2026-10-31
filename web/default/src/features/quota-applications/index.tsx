@@ -78,32 +78,20 @@ import type {
   QuotaApplicationTarget,
 } from './types'
 
-function getReconciliationRange(granularity: string, value: string) {
-  const date = value ? new Date(`${value}T00:00:00`) : new Date()
-  let start = new Date(date)
-  let end = new Date(date)
-  if (granularity === 'month') {
-    start = new Date(date.getFullYear(), date.getMonth(), 1)
-    end = new Date(date.getFullYear(), date.getMonth() + 1, 1)
-  } else if (granularity === 'week') {
-    const day = date.getDay() || 7
-    start = new Date(date)
-    start.setDate(date.getDate() - day + 1)
-    end = new Date(start)
-    end.setDate(start.getDate() + 7)
-  } else {
-    start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-    end = new Date(start)
-    end.setDate(start.getDate() + 1)
-  }
+function getReconciliationRange(startValue: string, endValue: string) {
+  const start = new Date(`${startValue}T00:00:00`)
+  const end = new Date(`${endValue}T00:00:00`)
+  // The API uses an exclusive upper bound, so include the whole end date.
+  end.setDate(end.getDate() + 1)
   return {
     from: Math.floor(start.getTime() / 1000),
     to: Math.floor(end.getTime() / 1000),
   }
 }
 
-function getLocalDateInputValue() {
+function getLocalDateInputValue(offsetDays = 0) {
   const date = new Date()
+  date.setDate(date.getDate() + offsetDays)
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${date.getFullYear()}-${month}-${day}`
@@ -111,13 +99,20 @@ function getLocalDateInputValue() {
 
 function ReconciliationView(props: { isRoot: boolean }) {
   const { t } = useTranslation()
-  const [granularity, setGranularity] = useState('day')
-  const [date, setDate] = useState(getLocalDateInputValue)
+  const [startDate, setStartDate] = useState(() => getLocalDateInputValue(-29))
+  const [endDate, setEndDate] = useState(() => getLocalDateInputValue())
   const [applicantId, setApplicantId] = useState<number | undefined>()
-  const range = getReconciliationRange(granularity, date)
+  const range = getReconciliationRange(startDate, endDate)
+  const rangeDays = (range.to - range.from) / (24 * 60 * 60)
+  const isRangeInvalid =
+    !Number.isFinite(range.from) ||
+    !Number.isFinite(range.to) ||
+    range.to <= range.from ||
+    rangeDays > 366
   const { data, isLoading, isError } = useQuery({
     queryKey: ['quota-application-summary', range.from, range.to, applicantId],
     queryFn: () => getQuotaApplicationSummary({ ...range, applicantId }),
+    enabled: !isRangeInvalid,
   })
   const summary = data
     ? {
@@ -147,25 +142,36 @@ function ReconciliationView(props: { isRoot: boolean }) {
   return (
     <div className='space-y-4'>
       <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
-        <Select
-          value={granularity}
-          onValueChange={(value) => value && setGranularity(value)}
+        <div className='space-y-1'>
+          <Label className='text-xs'>{t('Start date')}</Label>
+          <Input
+            type='date'
+            value={startDate}
+            max={endDate}
+            onChange={(event) => setStartDate(event.target.value)}
+            className='w-full sm:w-44'
+          />
+        </div>
+        <div className='space-y-1'>
+          <Label className='text-xs'>{t('End date')}</Label>
+          <Input
+            type='date'
+            value={endDate}
+            min={startDate}
+            onChange={(event) => setEndDate(event.target.value)}
+            className='w-full sm:w-44'
+          />
+        </div>
+        <Button
+          variant='outline'
+          className='sm:mt-5'
+          onClick={() => {
+            setStartDate(getLocalDateInputValue(-29))
+            setEndDate(getLocalDateInputValue())
+          }}
         >
-          <SelectTrigger className='w-full sm:w-36'>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value='day'>{t('Daily')}</SelectItem>
-            <SelectItem value='week'>{t('Weekly')}</SelectItem>
-            <SelectItem value='month'>{t('Monthly')}</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          type='date'
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-          className='w-full sm:w-48'
-        />
+          {t('Last 30 days')}
+        </Button>
         {props.isRoot && (
           <Select
             value={applicantId ? String(applicantId) : 'all'}
@@ -192,7 +198,12 @@ function ReconciliationView(props: { isRoot: boolean }) {
           </Select>
         )}
       </div>
-      {isError && (
+      {isRangeInvalid && (
+        <p className='text-destructive text-sm'>
+          {t('Select a valid date range of no more than 366 days')}
+        </p>
+      )}
+      {isError && !isRangeInvalid && (
         <p className='text-destructive text-sm'>
           {t('Failed to load reconciliation')}
         </p>
