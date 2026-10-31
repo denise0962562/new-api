@@ -75,6 +75,26 @@ func GetAffiliateUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"items": items, "total": total, "page": page.Page, "page_size": page.PageSize}})
 }
 
+func GetAffiliateStats(c *gin.Context) {
+	salesID := c.GetInt("id")
+	var stats struct {
+		DirectSubordinates int64 `json:"direct_subordinates"`
+		TotalConsumption int64 `json:"total_consumption"`
+		TotalSettledCommission int64 `json:"total_settled_commission"`
+		PaidCommission int64 `json:"paid_commission"`
+		PendingCommission int64 `json:"pending_commission"`
+		ApprovedCommission int64 `json:"approved_commission"`
+	}
+	if err := model.DB.Model(&model.User{}).Where("inviter_id = ? AND deleted_at IS NULL", salesID).Count(&stats.DirectSubordinates).Error; err != nil { common.ApiError(c, err); return }
+	if err := model.DB.Model(&model.User{}).Select("COALESCE(SUM(used_quota), 0)").Where("inviter_id = ? AND deleted_at IS NULL", salesID).Scan(&stats.TotalConsumption).Error; err != nil { common.ApiError(c, err); return }
+	settlements := model.DB.Model(&model.AffiliateSettlementApplication{}).Where("sales_id = ?", salesID)
+	if err := settlements.Where("status IN ?", []string{model.AffiliateSettlementApproved, model.AffiliateSettlementPaid}).Select("COALESCE(SUM(total_commission), 0)").Scan(&stats.TotalSettledCommission).Error; err != nil { common.ApiError(c, err); return }
+	if err := model.DB.Model(&model.AffiliateSettlementApplication{}).Where("sales_id = ? AND status = ?", salesID, model.AffiliateSettlementPaid).Select("COALESCE(SUM(total_commission), 0)").Scan(&stats.PaidCommission).Error; err != nil { common.ApiError(c, err); return }
+	if err := model.DB.Model(&model.AffiliateSettlementApplication{}).Where("sales_id = ? AND status = ?", salesID, model.AffiliateSettlementPending).Select("COALESCE(SUM(total_commission), 0)").Scan(&stats.PendingCommission).Error; err != nil { common.ApiError(c, err); return }
+	if err := model.DB.Model(&model.AffiliateSettlementApplication{}).Where("sales_id = ? AND status = ?", salesID, model.AffiliateSettlementApproved).Select("COALESCE(SUM(total_commission), 0)").Scan(&stats.ApprovedCommission).Error; err != nil { common.ApiError(c, err); return }
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": stats})
+}
+
 func GetAffiliateGroups(c *gin.Context) {
 	u, err := model.GetUserById(c.GetInt("id"), false)
 	if err != nil { common.ApiError(c, err); return }

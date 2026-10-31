@@ -99,6 +99,7 @@ export function Affiliate() {
   const { data: adminRulesData, refetch: refetchAdminRules } = useQuery({ queryKey: ['affiliate-rules-admin'], queryFn: async () => (await api.get('/api/user/affiliate/commission-rules')).data, enabled: isRoot })
   const { data: groupsResponse } = useQuery({ queryKey: ['affiliate-configurable-groups'], queryFn: async () => (await api.get('/api/group/')).data, enabled: isRoot })
   const { data: settlementsData, refetch: refetchSettlements } = useQuery({ queryKey: ['affiliate-settlements'], queryFn: async () => (await api.get('/api/user/affiliate/settlements')).data })
+  const { data: statsResponse, refetch: refetchAffiliateStats } = useQuery({ queryKey: ['affiliate-stats', authUser?.id], queryFn: async () => (await api.get('/api/user/affiliate/stats')).data })
   const loadSettlementPreview = async (user: AffiliateUser, endDate: string) => {
     const end = Math.floor(new Date(`${endDate}T23:59:59`).getTime() / 1000) + 1
     const res = await api.get(`/api/user/affiliate/users/${user.id}/settlement-preview`, { params: { end_at: end } })
@@ -111,7 +112,7 @@ export function Affiliate() {
       const res = await api.post('/api/user/affiliate/settlements', { target_user_id: dialog.user.id, start_at: settlementPreview.start_at, end_at: settlementPreview.end_at, total_quota: settlementPreview.total_quota, total_commission: settlementPreview.total_commission, items: settlementPreview.items, remark: settlementRemark, attachment_keys: settlementAttachments })
       if (!res.data.success) { toast.error(res.data.message || t('Submission failed')); return }
       localStorage.setItem('affiliate.settlement.remark', settlementRemark)
-      toast.success(t('Settlement application submitted')); setDialog(null); setSettlementPreview(null); setSettlementAttachments([]); await refetchSettlements()
+      toast.success(t('Settlement application submitted')); setDialog(null); setSettlementPreview(null); setSettlementAttachments([]); await Promise.all([refetchSettlements(), refetchAffiliateStats()])
     } finally { setSubmitting(false) }
   }
   const saveRule = async () => {
@@ -214,6 +215,11 @@ export function Affiliate() {
   }
 
   const users = data?.data?.items || []
+  const renderUserActions = (user: AffiliateUser, compact = false) => <div className={compact ? 'grid grid-cols-2 gap-2' : 'flex gap-1'}>
+    <Button size='sm' variant='outline' className={compact ? 'w-full' : undefined} onClick={() => { setAmount(''); setDialog({ type: 'transfer', user }) }}>{t('Transfer quota')}</Button>
+    <Button size='sm' variant='outline' className={compact ? 'w-full' : undefined} onClick={() => openGroups(user)}>{t('Add groups')}</Button>
+    <Button size='sm' variant='outline' className={compact ? 'col-span-2 w-full' : undefined} onClick={() => { setSettlementPreview(null); setSettlementAttachments([]); setDialog({ type: 'settlement', user }); loadSettlementPreview(user, settlementEnd) }}>{t('Apply settlement')}</Button>
+  </div>
   let tableBody = users.map((user) => (
     <tr key={user.id} className='border-b align-middle'>
       <td className='p-3 font-medium'>{user.username}</td>
@@ -238,26 +244,7 @@ export function Affiliate() {
           ? new Date(user.last_login_at * 1000).toLocaleString()
           : '-'}
       </td>
-      <td>
-        <div className='flex gap-1'>
-          <Button
-            size='sm'
-            variant='outline'
-            onClick={() => {
-              setAmount('')
-              setDialog({ type: 'transfer', user })
-            }}
-          >
-            {t('Transfer quota')}
-          </Button>
-          <Button size='sm' variant='outline' onClick={() => openGroups(user)}>
-            {t('Add groups')}
-          </Button>
-          <Button size='sm' variant='outline' onClick={() => { setSettlementPreview(null); setSettlementAttachments([]); setDialog({ type: 'settlement', user }); loadSettlementPreview(user, settlementEnd) }}>
-            {t('Apply settlement')}
-          </Button>
-        </div>
-      </td>
+      <td>{renderUserActions(user)}</td>
     </tr>
   ))
   if (isLoading) {
@@ -313,6 +300,16 @@ export function Affiliate() {
           </div>}
           {(!isRoot || activeTab === 'subordinates') && <>
           {!isRoot && <section className='mb-4 rounded-md border p-4'><h3 className='mb-2 font-medium'>{t('My commission rates')}</h3>{(rulesData?.data || []).length ? <div className='flex flex-wrap gap-2'>{(rulesData?.data || []).filter((r: any) => r.enabled).map((r: any) => <div key={r.id} className='rounded-md bg-muted px-3 py-2 text-sm'><span className='font-medium'>{r.group_name}</span><span className='ml-2'>{(r.rate_bps / 100).toFixed(2)}%</span></div>)}</div> : <p className='text-muted-foreground text-sm'>{t('No commission rules are configured for you. Please contact the root administrator.')}</p>}<p className='text-muted-foreground mt-2 text-xs'>{t('Only configured active groups are included in settlement applications.')}</p></section>}
+          <section className='mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6'>
+            {[
+              [t('Direct subordinates'), String(statsResponse?.data?.direct_subordinates || 0)],
+              [t('Total consumption'), formatQuota(statsResponse?.data?.total_consumption || 0)],
+              [t('Approved and paid commission'), formatQuota(statsResponse?.data?.total_settled_commission || 0)],
+              [t('Paid commission'), formatQuota(statsResponse?.data?.paid_commission || 0)],
+              [t('Pending review'), formatQuota(statsResponse?.data?.pending_commission || 0)],
+              [t('Awaiting payment'), formatQuota(statsResponse?.data?.approved_commission || 0)],
+            ].map(([label, value]) => <div key={label} className='min-w-0 rounded-md border p-3 sm:p-4'><div className='text-muted-foreground truncate text-xs sm:text-sm'>{label}</div><div className='mt-1 break-words text-lg font-semibold tabular-nums sm:text-xl'>{value}</div></div>)}
+          </section>
           <div className='mb-4 flex gap-2'>
             <Input
               value={keyword}
@@ -332,13 +329,13 @@ export function Affiliate() {
                 <span>{formatQuota(a.total_commission)} · {t(`Settlement ${a.status}`)}</span>
                 <div className='flex flex-wrap gap-1'>
                   <Button size='sm' variant='outline' onClick={() => setSelectedSettlement(a)}>{t('View details')}</Button>
-                  {isRoot && a.status === 'pending' && <><Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: true }); await refetchSettlements() }}>{t('Approve')}</Button><Button size='sm' variant='outline' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: false }); await refetchSettlements() }}>{t('Reject')}</Button></>}
-                  {isRoot && a.status === 'approved' && <Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { paid: true }); await refetchSettlements() }}>{t('Mark as paid')}</Button>}
+                  {isRoot && a.status === 'pending' && <><Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: true }); await Promise.all([refetchSettlements(), refetchAffiliateStats()]) }}>{t('Approve')}</Button><Button size='sm' variant='outline' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: false }); await Promise.all([refetchSettlements(), refetchAffiliateStats()]) }}>{t('Reject')}</Button></>}
+                  {isRoot && a.status === 'approved' && <Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { paid: true }); await Promise.all([refetchSettlements(), refetchAffiliateStats()]) }}>{t('Mark as paid')}</Button>}
                 </div>
               </div>)}
             </div>}
           </div>
-          <div className='overflow-auto rounded-md border'>
+          <div className='hidden overflow-auto rounded-md border lg:block'>
             <table className='w-full min-w-[1100px] text-sm'>
               <thead>
                 <tr className='border-b text-left'>
@@ -356,6 +353,18 @@ export function Affiliate() {
               </thead>
             <tbody>{tableBody}</tbody>
           </table>
+          </div>
+          <div className='space-y-3 lg:hidden'>
+            {isLoading ? <div className='text-muted-foreground rounded-md border p-6 text-center'>{t('Loading...')}</div> : users.length === 0 ? <div className='text-muted-foreground rounded-md border p-6 text-center'>{t('No direct subordinates')}</div> : users.map((user) => <article key={user.id} className='space-y-3 rounded-lg border p-3'>
+              <div className='flex items-start justify-between gap-3'><div className='min-w-0'><div className='break-all font-semibold'>{user.display_name || user.username}</div>{user.display_name && <div className='text-muted-foreground break-all text-xs'>{user.username} · #{user.id}</div>}</div><span className='shrink-0 rounded-full border px-2 py-1 text-xs'>{user.status === 1 ? t('Enabled') : t('Disabled')}</span></div>
+              <div className='grid grid-cols-2 gap-2'>
+                <div className='rounded-md bg-muted/40 p-2'><div className='text-muted-foreground text-xs'>{t('Quota')}</div><div className='font-medium'>{formatQuota(user.quota)}</div></div>
+                <div className='rounded-md bg-muted/40 p-2'><div className='text-muted-foreground text-xs'>{t('Consumption')}</div><Button variant='ghost' size='sm' className='h-auto p-0 font-medium' onClick={() => setDialog({ type: 'consumption', user })}>{formatQuota(user.used_quota)}<BarChart3 className='ml-1 size-4' /></Button></div>
+              </div>
+              <div className='break-all text-sm'><span className='text-muted-foreground'>{t('Group')}:</span> {user.group || '-'}</div>
+              <div className='grid grid-cols-2 gap-x-3 gap-y-1 text-xs'><div><span className='text-muted-foreground'>{t('Role')}:</span> {user.role}</div><div><span className='text-muted-foreground'>{t('Invitation information')}:</span> {t('{{count}} invited', { count: user.aff_count })}</div><div className='col-span-2'><span className='text-muted-foreground'>{t('Created at')}:</span> {new Date(user.created_at * 1000).toLocaleString()}</div><div className='col-span-2'><span className='text-muted-foreground'>{t('Last login')}:</span> {user.last_login_at ? new Date(user.last_login_at * 1000).toLocaleString() : '-'}</div></div>
+              {renderUserActions(user, true)}
+            </article>)}
           </div>
           </>}
         </SectionPageLayout.Content>
