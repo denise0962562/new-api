@@ -2,7 +2,9 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -61,13 +63,64 @@ func (AffiliateSettlementItem) TableName() string { return "affiliate_settlement
 
 func ValidateAffiliateRate(rateBps int) error { if rateBps < 10 || rateBps > 500 { return errors.New("rate must be between 0.1% and 5%") }; return nil }
 
+type AffiliateSettlementQuotaRow struct {
+	GroupName string `gorm:"column:use_group"`
+	Quota     int64  `gorm:"column:quota"`
+}
+
+// GetAvailableAffiliateSettlementQuota returns consumption not already
+// reserved by a pending, approved, or paid settlement for this target.
+func GetAvailableAffiliateSettlementQuota(db *gorm.DB, targetUserID int, startAt, endAt int64) ([]AffiliateSettlementQuotaRow, error) {
+	var reserved []AffiliateSettlementApplication
+	if err := db.Select("start_at", "end_at").Where("target_user_id = ? AND status IN ? AND start_at < ? AND end_at > ?", targetUserID, []string{AffiliateSettlementPending, AffiliateSettlementApproved, AffiliateSettlementPaid}, endAt, startAt).Find(&reserved).Error; err != nil {
+		return nil, err
+	}
+	query := db.Table("quota_data").Select("use_group, SUM(quota) AS quota").Where("user_id = ? AND created_at >= ? AND created_at < ?", targetUserID, startAt, endAt)
+	for _, application := range reserved {
+		query = query.Where("NOT (created_at >= ? AND created_at < ?)", application.StartAt, application.EndAt)
+	}
+	var rows []AffiliateSettlementQuotaRow
+	if err := query.Group("use_group").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
+}
+
 func CreateAffiliateSettlement(app *AffiliateSettlementApplication) error {
 	if app.Status == "" { app.Status = AffiliateSettlementPending }
 	return DB.Transaction(func(tx *gorm.DB) error {
-		var n int64
-		if err := tx.Model(&AffiliateSettlementApplication{}).Where("target_user_id = ? AND status IN ? AND start_at < ? AND end_at > ?", app.TargetUserId, []string{AffiliateSettlementPending, AffiliateSettlementApproved}, app.EndAt, app.StartAt).Count(&n).Error; err != nil { return err }
-		if n > 0 { return errors.New("settlement period overlaps an existing application") }
-		if err := tx.Create(app).Error; err != nil { return err }
+		// Serialize applications for a target and recalculate eligibility under
+		// the same transaction so two concurrent requests cannot claim the same
+		// consumption.
+		var target User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&target, "id = ? AND deleted_at IS NULL", app.TargetUserId).Error; err != nil { return err }
+		rows, err := GetAvailableAffiliateSettlementQuota(tx, app.TargetUserId, app.StartAt, app.EndAt)
+		if err != nil { return err }
+		var rules []AffiliateCommissionRule
+		if err := tx.Where("sales_id = ? AND enabled = ?", app.SalesId, true).Find(&rules).Error; err != nil { return err }
+		ruleMap := make(map[string]AffiliateCommissionRule, len(rules))
+		for _, rule := range rules { ruleMap[rule.GroupName] = rule }
+		available := make(map[string]int64, len(rows))
+		for _, row := range rows { if _, ok := ruleMap[row.GroupName]; ok && row.Quota > 0 { available[row.GroupName] = row.Quota } }
+		if len(available) != len(app.Items) { return errors.New("settlement details have changed, please refresh") }
+		var totalQuota, totalCommission int64
+		for _, item := range app.Items {
+			rule, ok := ruleMap[item.GroupName]
+			quota, exists := available[item.GroupName]
+			if !ok || !exists || quota != item.Quota || rule.RateBps != item.RateBps || item.Commission != item.Quota*int64(item.RateBps)/10000 {
+				return errors.New("settlement details have changed, please refresh")
+			}
+			delete(available, item.GroupName)
+			totalQuota += item.Quota
+			totalCommission += item.Commission
+		}
+		if len(available) != 0 || totalQuota != app.TotalQuota || totalCommission != app.TotalCommission {
+			return fmt.Errorf("settlement details have changed, please refresh")
+		}
+		// Persist the detail rows explicitly below. GORM otherwise creates the
+		// Items association as part of Create(app), and the loop would insert
+		// those same rows a second time with their newly assigned IDs.
+		if err := tx.Omit("Items").Create(app).Error; err != nil { return err }
 		for i := range app.Items { app.Items[i].ApplicationId = app.Id; if err := tx.Create(&app.Items[i]).Error; err != nil { return err } }
 		return nil
 	})

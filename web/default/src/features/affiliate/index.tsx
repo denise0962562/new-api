@@ -77,6 +77,8 @@ export function Affiliate() {
   const [settlementPreview, setSettlementPreview] = useState<any>(null)
   const [settlementRemark, setSettlementRemark] = useState(() => localStorage.getItem('affiliate.settlement.remark') || '')
   const [settlementAttachments, setSettlementAttachments] = useState<string[]>([])
+  const [selectedSettlement, setSelectedSettlement] = useState<any>(null)
+  const [settlementConsumption, setSettlementConsumption] = useState<any>(null)
   const [ruleSalesSearch, setRuleSalesSearch] = useState('')
   const [ruleSalesResults, setRuleSalesResults] = useState<any[]>([])
   const [selectedRuleSales, setSelectedRuleSales] = useState<any>(null)
@@ -109,7 +111,7 @@ export function Affiliate() {
       const res = await api.post('/api/user/affiliate/settlements', { target_user_id: dialog.user.id, start_at: settlementPreview.start_at, end_at: settlementPreview.end_at, total_quota: settlementPreview.total_quota, total_commission: settlementPreview.total_commission, items: settlementPreview.items, remark: settlementRemark, attachment_keys: settlementAttachments })
       if (!res.data.success) { toast.error(res.data.message || t('Submission failed')); return }
       localStorage.setItem('affiliate.settlement.remark', settlementRemark)
-      toast.success(t('Settlement application submitted')); setDialog(null); setSettlementPreview(null); setSettlementAttachments([])
+      toast.success(t('Settlement application submitted')); setDialog(null); setSettlementPreview(null); setSettlementAttachments([]); await refetchSettlements()
     } finally { setSubmitting(false) }
   }
   const saveRule = async () => {
@@ -146,6 +148,12 @@ export function Affiliate() {
     },
     [dialog]
   )
+
+  const loadSettlementConsumption = useCallback(async (startTimestamp: number, endTimestamp: number) => {
+    if (!settlementConsumption) return { success: true, data: [] }
+    const res = await api.get(`/api/user/affiliate/settlements/${settlementConsumption.id}/consumption-data`, { params: { start_timestamp: startTimestamp, end_timestamp: endTimestamp } })
+    return res.data
+  }, [settlementConsumption])
 
   const openGroups = async (user: AffiliateUser) => {
     const res = await api.get('/api/user/affiliate/groups')
@@ -316,7 +324,20 @@ export function Affiliate() {
             />
             <Button onClick={() => setFilter(keyword)}>{t('Search')}</Button>
           </div>
-          <div className='mb-4 rounded-md border p-3'><div className='mb-2 font-medium'>{t('Settlement applications')}</div>{(settlementsData?.data || []).length === 0 ? <div className='text-muted-foreground text-sm'>{t('No settlement applications')}</div> : <div className='space-y-1 text-sm'>{(settlementsData?.data || []).map((a: any) => <div key={a.id} className='flex flex-wrap items-center justify-between gap-2 border-b py-2'><span>#{a.id} · {a.target_user_id}</span><span>{formatQuota(a.total_commission)} · {t(`Settlement ${a.status}`)}</span>{authUser?.role === 100 && a.status === 'pending' && <span className='flex gap-1'><Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: true }); refetchSettlements() }}>{t('Approve')}</Button><Button size='sm' variant='outline' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: false }); refetchSettlements() }}>{t('Reject')}</Button></span>}{authUser?.role === 100 && a.status === 'approved' && <Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { paid: true }); refetchSettlements() }}>{t('Mark as paid')}</Button>}</div>)}</div>}</div>
+          <div className='mb-4 rounded-md border p-3'>
+            <div className='mb-2 font-medium'>{t('Settlement applications')}</div>
+            {(settlementsData?.data || []).length === 0 ? <div className='text-muted-foreground text-sm'>{t('No settlement applications')}</div> : <div className='space-y-1 text-sm'>
+              {(settlementsData?.data || []).map((a: any) => <div key={a.id} className='flex flex-wrap items-center justify-between gap-2 border-b py-2'>
+                <div><div className='font-medium'>#{a.id} · {a.target_display_name || a.target_username || `#${a.target_user_id}`}</div>{isRoot && <div className='text-muted-foreground text-xs'>{t('Sales user')}: {a.sales_display_name || a.sales_username || `#${a.sales_id}`}</div>}</div>
+                <span>{formatQuota(a.total_commission)} · {t(`Settlement ${a.status}`)}</span>
+                <div className='flex flex-wrap gap-1'>
+                  <Button size='sm' variant='outline' onClick={() => setSelectedSettlement(a)}>{t('View details')}</Button>
+                  {isRoot && a.status === 'pending' && <><Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: true }); await refetchSettlements() }}>{t('Approve')}</Button><Button size='sm' variant='outline' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: false }); await refetchSettlements() }}>{t('Reject')}</Button></>}
+                  {isRoot && a.status === 'approved' && <Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { paid: true }); await refetchSettlements() }}>{t('Mark as paid')}</Button>}
+                </div>
+              </div>)}
+            </div>}
+          </div>
           <div className='overflow-auto rounded-md border'>
             <table className='w-full min-w-[1100px] text-sm'>
               <thead>
@@ -348,6 +369,30 @@ export function Affiliate() {
           loadConsumption={loadConsumption}
         />
       )}
+
+      {selectedSettlement && <Dialog open onOpenChange={(open) => !open && setSelectedSettlement(null)} title={t('Settlement application details')} description={`#${selectedSettlement.id} · ${selectedSettlement.target_display_name || selectedSettlement.target_username || `#${selectedSettlement.target_user_id}`}`} contentClassName='sm:max-w-3xl'>
+        <div className='space-y-4 text-sm'>
+          <div className='grid gap-3 rounded-md border p-3 sm:grid-cols-2'>
+            <div><span className='text-muted-foreground'>{t('Sales user')}:</span> {selectedSettlement.sales_display_name || selectedSettlement.sales_username || `#${selectedSettlement.sales_id}`}</div>
+            <div><span className='text-muted-foreground'>{t('Target user')}:</span> {selectedSettlement.target_display_name || selectedSettlement.target_username || `#${selectedSettlement.target_user_id}`}</div>
+            <div><span className='text-muted-foreground'>{t('Settlement period')}:</span> {selectedSettlement.start_at > 0 ? new Date(selectedSettlement.start_at * 1000).toLocaleDateString() : t('All available history')} – {new Date(selectedSettlement.end_at * 1000).toLocaleDateString()}</div>
+            <div><span className='text-muted-foreground'>{t('Status')}:</span> {t(`Settlement ${selectedSettlement.status}`)}</div>
+            <div><span className='text-muted-foreground'>{t('Created at')}:</span> {new Date(selectedSettlement.created_at * 1000).toLocaleString()}</div>
+            {selectedSettlement.review_comment && <div><span className='text-muted-foreground'>{t('Review comment')}:</span> {selectedSettlement.review_comment}</div>}
+            {selectedSettlement.remark && <div className='sm:col-span-2'><span className='text-muted-foreground'>{t('Calculation remark')}:</span><p className='mt-1 whitespace-pre-wrap'>{selectedSettlement.remark}</p></div>}
+          </div>
+          <div className='rounded-md border p-3'>
+            <div className='mb-2 font-medium'>{t('Settlement breakdown')}</div>
+            {(selectedSettlement.items || []).map((item: any) => <div key={item.id || item.group_name} className='flex justify-between gap-3 border-b py-2 last:border-0'><span>{item.group_name} · {(item.rate_bps / 100).toFixed(2)}%</span><span>{formatQuota(item.quota)} → {formatQuota(item.commission)}</span></div>)}
+            <div className='flex justify-between pt-2 font-semibold'><span>{t('Total')}</span><span>{formatQuota(selectedSettlement.total_commission)}</span></div>
+          </div>
+          {(selectedSettlement.payment_type || selectedSettlement.payment_note) && <div><span className='text-muted-foreground'>{t('Payment method')}:</span> {[selectedSettlement.payment_type, selectedSettlement.payment_note].filter(Boolean).join(' · ')}</div>}
+          {(selectedSettlement.attachment_urls || []).length > 0 && <div><div className='mb-2 font-medium'>{t('Payment method image')}</div><div className='flex flex-wrap gap-2'>{selectedSettlement.attachment_urls.map((url: string) => <a key={url} href={url} target='_blank' rel='noreferrer'><img src={url} alt={t('Payment method image')} className='h-28 w-28 rounded border object-cover' /></a>)}</div></div>}
+          <Button variant='outline' onClick={() => { setSettlementConsumption({ id: selectedSettlement.id, user: { id: selectedSettlement.target_user_id, username: selectedSettlement.target_username || `#${selectedSettlement.target_user_id}`, display_name: selectedSettlement.target_display_name || '' } }); setSelectedSettlement(null) }}>{t('View user consumption')}</Button>
+        </div>
+      </Dialog>}
+
+      {settlementConsumption && <UserConsumptionDialog user={{ id: settlementConsumption.user.id, username: settlementConsumption.user.username, display_name: settlementConsumption.user.display_name, request_count: 0 } as User} open onOpenChange={(open) => !open && setSettlementConsumption(null)} loadConsumption={loadSettlementConsumption} />}
 
       <Dialog
         open={dialog?.type === 'transfer'}
