@@ -215,6 +215,14 @@ export function Affiliate() {
   }
 
   const users = data?.data?.items || []
+  const openSettlementConsumption = (settlement: any) => setSettlementConsumption({
+    id: settlement.id,
+    user: {
+      id: settlement.target_user_id,
+      username: settlement.target_username || `#${settlement.target_user_id}`,
+      display_name: settlement.target_display_name || '',
+    },
+  })
   const renderUserActions = (user: AffiliateUser, compact = false) => <div className={compact ? 'grid grid-cols-2 gap-2' : 'flex gap-1'}>
     <Button size='sm' variant='outline' className={compact ? 'w-full' : undefined} onClick={() => { setAmount(''); setDialog({ type: 'transfer', user }) }}>{t('Transfer quota')}</Button>
     <Button size='sm' variant='outline' className={compact ? 'w-full' : undefined} onClick={() => openGroups(user)}>{t('Add groups')}</Button>
@@ -267,7 +275,7 @@ export function Affiliate() {
 
   return (
     <>
-      <SectionPageLayout fixedContent>
+      <SectionPageLayout>
         <SectionPageLayout.Title>
           {t('My direct subordinates')}
         </SectionPageLayout.Title>
@@ -329,6 +337,7 @@ export function Affiliate() {
                 <span>{formatQuota(a.total_commission)} · {t(`Settlement ${a.status}`)}</span>
                 <div className='flex flex-wrap gap-1'>
                   <Button size='sm' variant='outline' onClick={() => setSelectedSettlement(a)}>{t('View details')}</Button>
+                  <Button size='sm' variant='outline' onClick={() => openSettlementConsumption(a)}><BarChart3 className='mr-1 size-4' />{t('View user consumption')}</Button>
                   {isRoot && a.status === 'pending' && <><Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: true }); await Promise.all([refetchSettlements(), refetchAffiliateStats()]) }}>{t('Approve')}</Button><Button size='sm' variant='outline' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { approved: false }); await Promise.all([refetchSettlements(), refetchAffiliateStats()]) }}>{t('Reject')}</Button></>}
                   {isRoot && a.status === 'approved' && <Button size='sm' onClick={async () => { await api.post(`/api/user/affiliate/settlements/${a.id}/review`, { paid: true }); await Promise.all([refetchSettlements(), refetchAffiliateStats()]) }}>{t('Mark as paid')}</Button>}
                 </div>
